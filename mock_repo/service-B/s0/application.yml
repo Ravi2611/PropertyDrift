@@ -1,0 +1,3 @@
+app:
+  name: service-B
+  enabled: true

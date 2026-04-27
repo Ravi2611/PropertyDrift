@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DriftGuard - Scan History</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --primary: #38bdf8;
+            --critical: #ef4444;
+            --warning: #f59e0b;
+            --info: #10b981;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-weight: 300;
+            margin: 0;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            margin-bottom: 2rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+        }
+
+        th {
+            background: #334155;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+
+        tr:hover {
+            background: #2d3a4f;
+            cursor: pointer;
+        }
+
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .badge-CRITICAL { background: var(--critical); color: white; }
+        .badge-WARNING { background: var(--warning); color: white; }
+        .badge-INFO { background: var(--info); color: white; }
+
+        button {
+            background: var(--primary);
+            color: var(--bg-color);
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: #334155;
+            color: white;
+        }
+
+        #driftDetails {
+            display: none;
+            margin-top: 3rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>Scan History</h1>
+        <button class="secondary" onclick="location.href='/'">Back to Dashboard</button>
+    </div>
+
+    <div class="card">
+        <table id="historyTable">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Total Drifts</th>
+                    <th>Critical</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- History rows will load here -->
+            </tbody>
+        </table>
+    </div>
+
+    <div id="driftDetails" class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2 id="detailTitle" style="margin: 0;">Scan Details</h2>
+            <button class="secondary" onclick="document.getElementById('driftDetails').style.display='none'" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Close</button>
+        </div>
+        <table id="detailsTable">
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Env</th>
+                    <th>File</th>
+                    <th>Key</th>
+                    <th>Type</th>
+                    <th>Severity</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Drift details will load here -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function loadHistory() {
+            const res = await fetch('/scans');
+            const data = await res.json();
+            const tbody = document.querySelector('#historyTable tbody');
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-dim)">No history found</td></tr>';
+                return;
+            }
+
+            data.forEach(scan => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${new Date(scan.timestamp).toLocaleString()}</td>
+                    <td>${scan.total_drifts}</td>
+                    <td><span class="badge ${scan.critical_drifts > 0 ? 'badge-CRITICAL' : 'badge-INFO'}">${scan.critical_drifts}</span></td>
+                    <td><button onclick="viewDetails(${scan.id})" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">View Details</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function viewDetails(scanId) {
+            const res = await fetch(`/scans/${scanId}/drifts`);
+            const data = await res.json();
+            
+            const detailSection = document.getElementById('driftDetails');
+            const tbody = document.querySelector('#detailsTable tbody');
+            tbody.innerHTML = '';
+
+            data.forEach(row => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${row.service}</td>
+                        <td>${row.env}</td>
+                        <td>${row.file}</td>
+                        <td>${row.key}</td>
+                        <td>${row.diff_type}</td>
+                        <td><span class="badge badge-${row.severity}">${row.severity}</span></td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('detailTitle').innerText = `Scan Details (ID: ${scanId})`;
+            detailSection.style.display = 'block';
+            detailSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        loadHistory();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,8 @@
+server:
+  port: 8081
+  timeout: 5000
+db:
+  url: "jdbc:mysql://s1-db:3306/serviceA"
+  pool:
+    size: 20
+extra-config: 123

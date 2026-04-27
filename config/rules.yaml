@@ -1,0 +1,40 @@
+# DriftGuard Rules Configuration
+
+ignore_keys:
+#  - "server.port"
+
+env_aware_keys:
+  - "db.url"
+  - "db.password"
+
+ignore_patterns:
+  - ".*timestamp.*"
+  - ".*metrics.*"
+
+normalizations:
+  - pattern: 'db.url'
+    regex: 'jdbc:mysql://[^/]+/(.+)'
+    replace: 'jdbc:mysql://{HOST_REMOVED}/\1'
+
+severity:
+  CRITICAL:
+    - "feature-flags.new-ui"
+    - "db.user"
+  WARNING:
+    - "server.timeout"
+
+remediation:
+  enable_smart_swap: true
+  static_mappings:
+    - key_pattern: ".*alb.*"
+      environments:
+        s0: "http://internal-s0-int-alb-1898657965.ap-south-1.elb.amazonaws.com"
+        s1: "http://internal-s1-int-alb-268696201.ap-south-1.elb.amazonaws.com"
+        s2: "http://internal-s2-int-alb-962471675.ap-south-1.elb.amazonaws.com"
+        s3: "http://internal-s3-int-alb-51824138.ap-south-1.elb.amazonaws.com"
+        s4: "http://internal-s4-int-alb-94887976.ap-south-1.elb.amazonaws.com"
+        s7: "http://internal-s7-int-alb-2056119716.ap-south-1.elb.amazonaws.com"
+        s8: "http://internal-s8-int-alb-386223465.ap-south-1.elb.amazonaws.com"
+        s9: "http://internal-s9-int-alb-1290036311.ap-south-1.elb.amazonaws.com"
+        dev4: "http://internal-dev4-int-alb-2036348797.ap-south-1.elb.amazonaws.com"
+        dev5: "http://internal-dev5-int-alb-860243805.ap-south-1.elb.amazonaws.com"

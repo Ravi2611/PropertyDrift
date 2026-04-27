@@ -1,0 +1,90 @@
+[
+  {
+    "service": "service-A",
+    "env": "s1",
+    "file": "db.properties",
+    "key": "db.password",
+    "base_value": "secret",
+    "target_value": "dev-secret",
+    "diff_type": "VALUE_MISMATCH",
+    "severity": "INFO",
+    "drift_score": 18
+  },
+  {
+    "service": "service-A",
+    "env": "s1",
+    "file": "db.properties",
+    "key": "db.driver",
+    "base_value": "com.mysql.cj.jdbc.Driver",
+    "target_value": null,
+    "diff_type": "MISSING_KEY",
+    "severity": "WARNING",
+    "drift_score": 18
+  },
+  {
+    "service": "service-A",
+    "env": "s1",
+    "file": "application.yml",
+    "key": "feature-flags.new-ui",
+    "base_value": true,
+    "target_value": null,
+    "diff_type": "MISSING_KEY",
+    "severity": "CRITICAL",
+    "drift_score": 18
+  },
+  {
+    "service": "service-A",
+    "env": "s1",
+    "file": "application.yml",
+    "key": "db.pool.size",
+    "base_value": 10,
+    "target_value": 20,
+    "diff_type": "VALUE_MISMATCH",
+    "severity": "WARNING",
+    "drift_score": 18
+  },
+  {
+    "service": "service-A",
+    "env": "s1",
+    "file": "application.yml",
+    "key": "db.pool.max-idle",
+    "base_value": 5,
+    "target_value": null,
+    "diff_type": "MISSING_KEY",
+    "severity": "WARNING",
+    "drift_score": 18
+  },
+  {
+    "service": "service-A",
+    "env": "s1",
+    "file": "application.yml",
+    "key": "extra-config",
+    "base_value": null,
+    "target_value": 123,
+    "diff_type": "EXTRA_KEY",
+    "severity": "WARNING",
+    "drift_score": 18
+  },
+  {
+    "service": "service-B",
+    "env": "s1",
+    "file": "application.yaml",
+    "key": "",
+    "base_value": null,
+    "target_value": null,
+    "diff_type": "EXTRA_FILE",
+    "severity": "INFO",
+    "drift_score": 10
+  },
+  {
+    "service": "service-B",
+    "env": "s1",
+    "file": "application.yml",
+    "key": "",
+    "base_value": null,
+    "target_value": null,
+    "diff_type": "MISSING_FILE",
+    "severity": "CRITICAL",
+    "drift_score": 10
+  }
+]

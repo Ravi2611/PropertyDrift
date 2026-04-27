@@ -1,0 +1,10 @@
+server:
+  port: 8080
+  timeout: 5000
+db:
+  url: "jdbc:mysql://prod-db:3306/serviceA"
+  pool:
+    size: 10
+    max-idle: 5
+feature-flags:
+  new-ui: true

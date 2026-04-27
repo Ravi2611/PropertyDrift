@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DriftGuard Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --primary: #38bdf8;
+            --critical: #ef4444;
+            --warning: #f59e0b;
+            --success: #10b981;
+            --info: #3b82f6;
+            --text: #f8fafc;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        h1 {
+            font-weight: 300;
+            margin-bottom: 2rem;
+        }
+
+        .matrix {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+        }
+
+        .score {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 1rem 0;
+        }
+
+        .status-critical {
+            color: var(--critical);
+        }
+
+        .status-warning {
+            color: var(--warning);
+        }
+
+        .status-info {
+            color: var(--info);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            table-layout: fixed;
+            /* Fix layout */
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+            word-break: break-all;
+            /* Prevent overflow */
+            font-size: 0.85rem;
+        }
+
+        th {
+            background: #334155;
+            color: var(--text-dim);
+        }
+
+        tr:hover {
+            background: #2d3a4f;
+        }
+
+        /* Column Widths */
+        th:nth-child(1) {
+            width: 12%;
+        }
+
+        /* Service */
+        th:nth-child(2) {
+            width: 8%;
+        }
+
+        /* Env */
+        th:nth-child(3) {
+            width: 15%;
+        }
+
+        /* File */
+        th:nth-child(4) {
+            width: 15%;
+        }
+
+        /* Key */
+        th:nth-child(5) {
+            width: 18%;
+        }
+
+        /* Base */
+        th:nth-child(6) {
+            width: 18%;
+        }
+
+        /* Target */
+        th:nth-child(7) {
+            width: 8%;
+        }
+
+        /* Type */
+        th:nth-child(8) {
+            width: 6%;
+        }
+
+        /* Severity */
+        th:nth-child(9) {
+            width: 5%;
+        }
+        /* Actions */
+
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .badge-CRITICAL {
+            background: var(--critical);
+            color: white;
+        }
+
+        .badge-WARNING {
+            background: var(--warning);
+            color: white;
+        }
+
+        .badge-INFO {
+            background: var(--info);
+            color: white;
+        }
+
+        .controls {
+            margin-bottom: 2rem;
+        }
+
+        button {
+            background: var(--primary);
+            color: var(--bg-color);
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>DriftGuard Configuration Health</h1>
+
+    <div class="controls card" style="margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1rem;">
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <input type="text" id="repoUrl" placeholder="https://github.com/user/repo"
+                style="flex: 1; padding: 0.75rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white;">
+            <button onclick="cloneRepo()">Clone Repository</button>
+            <button onclick="location.href='/history.html'" style="background: #334155;">View History</button>
+        </div>
+
+        <div id="gitControls" style="display: none; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+            <div>
+                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Service</label>
+                <select id="serviceSelect" onchange="loadEnvs()"
+                    style="width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;"></select>
+            </div>
+            <div>
+                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Branch</label>
+                <select id="sourceBranch" onchange="loadEnvs()"
+                    style="width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;"></select>
+            </div>
+            <div id="sourceEnvContainer">
+                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Source Env</label>
+                <div class="tiered-selects" id="sourceTiers"></div>
+            </div>
+            <div id="targetEnvContainer">
+                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Target Env</label>
+                <div class="tiered-selects" id="targetTiers"></div>
+            </div>
+        </div>
+        <div id="scanAction" style="display: none; margin-top: 1.5rem; border-top: 1px solid #334155; padding-top: 1.5rem;">
+             <button onclick="runScan()" 
+                style="width: 100%; background: #10b981 !important; color: white !important; font-weight: bold; padding: 1.25rem; border-radius: 8px; border: none; cursor: pointer; font-size: 1.1rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                🚀 Run Comparison Scan
+             </button>
+        </div>
+    </div>
+
+    <h2>Health Matrix</h2>
+    <div style="margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center;">
+        <button id="fixAllBtn" onclick="applyBulkRemediation()" style="background: var(--warning); display: none;">Fix All Missing Keys</button>
+        <div id="scanStatus" style="font-size: 0.9rem; color: var(--text-dim);"></div>
+    </div>
+
+    <div id="matrix" class="matrix">
+        <!-- Matrix cards will load here -->
+    </div>
+
+    <div
+        style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem; margin-top: 3rem;">
+        <div>
+            <h2 style="margin: 0;">Detail View <small
+                    style="font-size: 0.9rem; color: var(--text-dim); font-weight: normal;">(Current Run Only)</small></h2>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+                <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.25rem;">Filter by Type</label>
+                <select id="typeFilter" onchange="applyFilters()"
+                    style="padding: 0.4rem; border-radius: 4px; background: #334155; color: white; border: none; font-size: 0.8rem; min-width: 140px;">
+                    <option value="ALL">All Types</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.25rem;">Severity</label>
+                <select id="severityFilter" onchange="applyFilters()"
+                    style="padding: 0.4rem; border-radius: 4px; background: #334155; color: white; border: none; font-size: 0.8rem; min-width: 100px;">
+                    <option value="ALL">All</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="WARNING">Warning</option>
+                    <option value="INFO">Info</option>
+                </select>
+            </div>
+            <button id="downloadBtn" onclick="downloadCSV()"
+                style="background: #334155; font-size: 0.8rem; padding: 0.5rem 1rem; display: none; align-self: flex-end;">Download CSV</button>
+        </div>
+    </div>
+    <table id="details">
+        <thead>
+            <tr>
+                <th>Service</th>
+                <th>Env</th>
+                <th>File</th>
+                <th>Key</th>
+                <th>Base</th>
+                <th>Target</th>
+                <th>Type</th>
+                <th>Severity</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Details will load here -->
+        </tbody>
+    </table>
+
+    <script>
+        let currentRepo = '';
+
+        async function cloneRepo() {
+            const url = document.getElementById('repoUrl').value;
+            if (!url) return alert('Please enter a URL');
+
+            const res = await fetch('/repo/clone?repo_url=' + encodeURIComponent(url), { method: 'POST' });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                currentRepo = data.repo_name;
+                document.getElementById('gitControls').style.display = 'grid';
+                document.getElementById('scanAction').style.display = 'block';
+
+                // Fill branches
+                const branchOptions = data.branches.map(b => `<option value="${b}">${b}</option>`).join('');
+                document.getElementById('sourceBranch').innerHTML = branchOptions;
+
+                if (data.default_branch) {
+                    document.getElementById('sourceBranch').value = data.default_branch;
+                }
+
+                // Fill services
+                document.getElementById('serviceSelect').innerHTML = data.services.map(s => `<option value="${s}">${s}</option>`).join('');
+
+                loadEnvs();
+            } else {
+                alert('Clone failed: ' + data.detail);
+            }
+        }
+
+        async function loadEnvs() {
+            // Reset containers
+            document.getElementById('sourceTiers').innerHTML = '';
+            document.getElementById('targetTiers').innerHTML = '';
+            
+            await addTier('sourceTiers', '');
+            await addTier('targetTiers', '');
+        }
+
+        async function addTier(containerId, parentPath) {
+            const service = document.getElementById('serviceSelect').value;
+            const branch = document.getElementById('sourceBranch').value;
+            const res = await fetch(`/repo/${currentRepo}/envs?service=${service}&branch=${branch}&sub_path=${parentPath}`);
+            const items = await res.json();
+            
+            if (items.length === 0) return;
+
+            const select = document.createElement('select');
+            select.className = 'tier-select';
+            select.style = "width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none; margin-bottom: 0.5rem;";
+            
+            let options = '<option value="">-- select --</option>';
+            options += items.map(item => `<option value="${item.name}" data-folder="${item.is_folder}" data-env="${item.is_env}">${item.name}${item.is_folder ? ' >' : ''}</option>`).join('');
+            select.innerHTML = options;
+
+            const container = document.getElementById(containerId);
+            container.appendChild(select);
+
+            select.onchange = async () => {
+                // Remove all subsequent tiers
+                while (select.nextSibling) {
+                    container.removeChild(select.nextSibling);
+                }
+
+                const selectedOption = select.options[select.selectedIndex];
+                if (!selectedOption.value) return;
+
+                const isFolder = selectedOption.getAttribute('data-folder') === 'true';
+                const isEnv = selectedOption.getAttribute('data-env') === 'true';
+                const newPath = parentPath ? `${parentPath}/${selectedOption.value}` : selectedOption.value;
+
+                if (isFolder) {
+                    await addTier(containerId, newPath);
+                }
+                
+                // Show scan action if at least one side is an env (or just show it always if we have values)
+                document.getElementById('scanAction').style.display = 'block';
+            };
+            
+            // Auto-select if only one option (excluding placeholder)
+            if (items.length === 1) {
+                select.value = items[0].name;
+                select.onchange();
+            }
+        }
+
+        function getFullEnvPath(containerId) {
+            const selects = document.getElementById(containerId).querySelectorAll('.tier-select');
+            const paths = [];
+            selects.forEach(s => {
+                if (s.value) paths.push(s.value);
+            });
+            return paths.join('/');
+        }
+
+        async function loadMatrix(scanId = null) {
+            const url = scanId ? `/matrix?scan_id=${scanId}` : '/matrix';
+            const res = await fetch(url);
+            const data = await res.json();
+            const container = document.getElementById('matrix');
+            container.innerHTML = '';
+
+            for (const [service, envs] of Object.entries(data)) {
+                for (const [env, info] of Object.entries(envs)) {
+                    const statusClass = info.score > 20 ? 'status-critical' : (info.score > 0 ? 'status-warning' : 'status-info');
+                    container.innerHTML += `
+                        <div class="card">
+                            <div style="color: var(--text-dim)">${service}</div>
+                            <div style="font-size: 1.2rem">${env}</div>
+                            <div class="score ${statusClass}">${info.score}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-dim)">Last Scan: ${new Date(info.timestamp).toLocaleString()}</div>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        async function loadDetails(data) {
+            console.log("Loading details with data:", data);
+            if (!data) {
+                const res = await fetch('/results');
+                data = await res.json();
+                console.log("Fetched results from server:", data);
+            }
+
+            window.allResults = data; // Store full dataset
+            populateTypeFilter(data);
+            applyFilters(); // Render initially
+        }
+
+        function populateTypeFilter(data) {
+            const typeFilter = document.getElementById('typeFilter');
+            const types = [...new Set(data.map(d => d.diff_type))].sort();
+            
+            // Keep "All Types" and add others
+            typeFilter.innerHTML = '<option value="ALL">All Types</option>' + 
+                types.map(t => `<option value="${t}">${t.replace(/_/g, ' ')}</option>`).join('');
+        }
+
+        function applyFilters() {
+            const typeValue = document.getElementById('typeFilter').value;
+            const severityValue = document.getElementById('severityFilter').value;
+
+            let filtered = window.allResults || [];
+
+            if (typeValue !== 'ALL') {
+                filtered = filtered.filter(d => d.diff_type === typeValue);
+            }
+
+            if (severityValue !== 'ALL') {
+                filtered = filtered.filter(d => d.severity === severityValue);
+            }
+
+            renderTable(filtered);
+        }
+
+        function renderTable(data) {
+            const tbody = document.querySelector('#details tbody');
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-dim)">No matching drifts found</td></tr>';
+                document.getElementById('downloadBtn').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('downloadBtn').style.display = 'block';
+
+            data.forEach(row => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${row.service}</td>
+                        <td>${row.env}</td>
+                        <td>${row.file}</td>
+                        <td title="${row.key}">${row.key}</td>
+                        <td style="color: var(--text-dim)">${row.base_value || '-'}</td>
+                        <td>${row.target_value || '-'}</td>
+                        <td>${row.diff_type}</td>
+                        <td><span class="badge badge-${row.severity}">${row.severity}</span></td>
+                        <td>
+                            ${row.diff_type === 'MISSING_KEY' ? 
+                                `<button onclick="applyRemediation(${row.id})" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; background: var(--info); width: auto;">Fix</button>` : 
+                                ''}
+                        </td>
+                    </tr>
+                `;
+            });
+            window.currentViewResults = data; // Store for CSV export
+        }
+
+        async function runScan() {
+            const sourceEnv = getFullEnvPath('sourceTiers');
+            const targetEnv = getFullEnvPath('targetTiers');
+            const service = document.getElementById('serviceSelect').value;
+            const branch = document.getElementById('sourceBranch').value;
+
+            if (!sourceEnv || !targetEnv) return alert('Please select both environments fully');
+
+            const params = new URLSearchParams({
+                repo_name: currentRepo,
+                service: service,
+                baseline_env: sourceEnv,
+                target_env: targetEnv,
+                baseline_branch: branch
+            });
+
+            const res = await fetch('/scan?' + params.toString());
+            const data = await res.json();
+
+            document.getElementById('scanStatus').innerText = `Scan ID: ${data.scan_id} - Found ${data.drifts_found} drifts`;
+            loadMatrix(data.scan_id);
+            window.currentScanId = data.scan_id;
+            document.getElementById('fixAllBtn').style.display = 'block';
+            await loadDetails(data.drifts);
+        }
+
+        function downloadCSV() {
+            const dataToExport = window.currentViewResults || [];
+            if (dataToExport.length === 0) return;
+
+            const headers = ["Service", "Env", "File", "Key", "Base", "Target", "Type", "Severity"];
+            const rows = dataToExport.map(r => [
+                r.service, r.env, r.file, r.key,
+                r.base_value || '', r.target_value || '',
+                r.diff_type, r.severity
+            ]);
+
+            let csvContent = "data:text/csv;charset=utf-8,"
+                + headers.join(",") + "\n"
+                + rows.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `drift_report_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function applyRemediation(recordId) {
+            if (!confirm('Are you sure you want to add this missing key? A backup will be created and environment-specific values (like ALBs) will be automatically transformed.')) return;
+            
+            try {
+                const res = await fetch(`/remediate?record_id=${recordId}`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert('Successfully remediated!');
+                    // Optionally rerun scan to update view
+                    runScan();
+                } else {
+                    alert('Error: ' + data.detail);
+                }
+            } catch (e) {
+                alert('Remediation failed: ' + e);
+            }
+        }
+
+        async function applyBulkRemediation() {
+            if (!window.currentScanId) return;
+            if (!confirm('This will attempt to fix ALL missing keys in this scan. Backups will be created for all modified files. Continue?')) return;
+
+            try {
+                const res = await fetch(`/remediate/bulk?scan_id=${window.currentScanId}`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert(`Bulk remediation complete! Fixed ${data.remediated}/${data.total} keys.`);
+                    runScan();
+                } else {
+                    alert('Error: ' + data.detail);
+                }
+            } catch (e) {
+                alert('Bulk remediation failed: ' + e);
+            }
+        }
+
+
+        // Removed auto-load for a cleaner start
+        // loadMatrix();
+        // loadDetails();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pyyaml
+sqlmodel
+pytest
+pydantic-settings
+python-multipart
+ruamel.yaml

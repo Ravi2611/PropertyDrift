@@ -63,57 +63,43 @@ class RuleManager:
         return 'WARNING'
 
     def transform_value(self, key: str, value: Any, target_env: str, baseline_env: str) -> Any:
-        """Transforms a value from baseline to target (e.g. s0 -> s1 or ALB mapping)."""
+        """Transforms a value from baseline to target by swapping exact tokens and ALBs."""
         if not isinstance(value, str):
             return value
 
-        remediation_cfg = self.rules.get('remediation', {})
-        static_mappings = remediation_cfg.get('static_mappings', [])
-        
-        # 1. Try static mappings (e.g. ALBs)
-        remediation_cfg = self.rules.get('remediation', {})
-        static_mappings = remediation_cfg.get('static_mappings', [])
-        
-        logger.debug(f"RuleManager: Processing {len(static_mappings)} static mappings for {key}")
-        for mapping in static_mappings:
-            pattern = mapping.get('key_pattern')
-            if pattern and (re.search(pattern, key, re.IGNORECASE) or re.search(pattern, value, re.IGNORECASE)):
-                envs = mapping.get('environments', {})
-                
-                # Check for direct match first, then substring match
-                match_val = envs.get(target_env)
-                if not match_val:
-                    for e_short, e_full in envs.items():
-                        if e_short.lower() in target_env.lower():
-                            match_val = e_full
-                            break
-                
-                if match_val:
-                    logger.info(f"RuleManager: Static mapping HIT for {key} -> {target_env}")
-                    # Append suffix if original value had a path (e.g. /catalog-service/)
-                    suffix = ""
-                    if ".com/" in value:
-                        suffix = value.split(".com/")[1]
-                    
-                    final_val = match_val if not suffix else f"{match_val.rstrip('/')}/{suffix}"
-                    return final_val
-        
-        # 2. Try Smart Swap (e.g. replace s0 with s1)
-        if remediation_cfg.get('enable_smart_swap', True):
-            search_str = baseline_env
-            for short_env in ["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "dev4", "dev5"]:
-                if short_env in baseline_env:
-                    search_str = short_env
-                    break
-            
-            replace_str = target_env
-            for short_env in ["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "dev4", "dev5"]:
-                if short_env in target_env:
-                    replace_str = short_env
-                    break
+        env_mappings = self.rules.get('env_mappings', {})
+        if not env_mappings:
+            return value
 
-            pattern = re.compile(re.escape(search_str), re.IGNORECASE)
-            transformed = pattern.sub(replace_str, value)
-            return transformed
+        # 1. Identify which tokens belong to baseline and which belong to target
+        # Sort them by length descending so we match 'hongs-s0' before 's0'
+        sorted_keys = sorted(env_mappings.keys(), key=len, reverse=True)
+        
+        base_tokens = [k for k in sorted_keys if k in baseline_env]
+        target_tokens = [k for k in sorted_keys if k in target_env]
+        
+        new_value = value
+        
+        # 2. Extract specific ALBs and Tokens to swap
+        # We pair up the matched tokens. If baseline is `uat/hongs-uat` and target is `stage/hongs-s0`
+        # base_tokens = ['hongs-uat', 'uat'], target_tokens = ['hongs-s0', 's0']
+        
+        # Determine the primary token mapping
+        for i in range(min(len(base_tokens), len(target_tokens))):
+            b_tok = base_tokens[i]
+            t_tok = target_tokens[i]
             
-        return value
+            b_alb = env_mappings.get(b_tok, {}).get('alb', '')
+            t_alb = env_mappings.get(t_tok, {}).get('alb', '')
+            
+            # Substitute ALB if matched
+            if b_alb and b_alb in new_value:
+                new_value = new_value.replace(b_alb, t_alb)
+                logger.info(f"RuleManager: Swapped ALB {b_alb} -> {t_alb}")
+            
+            # Substitute explicit tokens
+            if b_tok in new_value:
+                new_value = new_value.replace(b_tok, t_tok)
+                logger.info(f"RuleManager: Swapped Token {b_tok} -> {t_tok}")
+
+        return new_value

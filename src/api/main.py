@@ -224,8 +224,8 @@ def get_scan_drifts(scan_id: int):
     return drifts
 
 @app.post("/remediate")
-def remediate(record_id: int):
-    logger.info(f"Request: POST /remediate | record_id={record_id}")
+def remediate(record_id: int, create_mr: bool = False):
+    logger.info(f"Request: POST /remediate | record_id={record_id} | create_mr={create_mr}")
     with Session(engine) as session:
         record = session.get(DriftRecord, record_id)
         if not record:
@@ -299,12 +299,21 @@ def remediate(record_id: int):
             logger.error(f"Remediate failed: ConfigRemediator returned failure for {target_file_path}")
             raise HTTPException(status_code=500, detail="Remediation failed. Check logs.")
         
+        msg = f"Remediated {record.key} in {record.service}/{record.env}"
+        if create_mr:
+            try:
+                branch = git_manager.push_with_mr(repo_path, [target_file_path])
+                msg += f" | MR Created on branch: {branch}"
+            except Exception as e:
+                logger.error(f"MR Creation failed for individual fix: {e}")
+                msg += " | WARNING: Git Push failed. See logs."
+        
         logger.info(f"Success: POST /remediate | record_id={record_id} | path={target_file_path} | key={record.key}")
-        return {"status": "success", "message": f"Remediated {record.key} in {record.service}/{record.env}"}
+        return {"status": "success", "message": msg}
 
 @app.post("/remediate/bulk")
-def remediate_bulk(scan_id: int):
-    logger.info(f"Request: POST /remediate/bulk | scan_id={scan_id}")
+def remediate_bulk(scan_id: int, create_mr: bool = False):
+    logger.info(f"Request: POST /remediate/bulk | scan_id={scan_id} | create_mr={create_mr}")
     with Session(engine) as session:
         history = session.get(ScanHistory, scan_id)
         if not history:
@@ -324,6 +333,7 @@ def remediate_bulk(scan_id: int):
         remediator = ConfigRemediator()
         rule_manager = RuleManager("config/rules.yaml")
         results = []
+        modified_files = set()
         
         repo_path = os.path.join("data/repos", history.repo_name) if history.repo_name != "mock_repo" else "mock_repo"
 
@@ -367,13 +377,25 @@ def remediate_bulk(scan_id: int):
                 git_manager=git_manager
             )
             results.append({"key": record.key, "success": success})
+            if success:
+                modified_files.add(target_file_path)
             
         success_count = sum(1 for r in results if r['success'])
         logger.info(f"Bulk Remediate Success: {success_count}/{len(records)} keys remediated")
         
+        msg = f"{success_count}/{len(records)} keys remediated."
+        if create_mr and modified_files:
+            try:
+                branch = git_manager.push_with_mr(repo_path, list(modified_files))
+                msg += f" MR Created on branch: {branch}"
+            except Exception as e:
+                logger.error(f"Bulk MR Creation failed: {e}")
+                msg += " WARNING: Git Push failed."
+                
         return {
             "status": "success", 
             "total": len(records), 
             "remediated": success_count,
+            "message": msg,
             "results": results
         }

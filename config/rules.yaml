@@ -23,18 +23,38 @@ severity:
   WARNING:
     - "server.timeout"
 
-remediation:
-  enable_smart_swap: true
-  static_mappings:
-    - key_pattern: ".*alb.*"
-      environments:
-        s0: "http://internal-s0-int-alb-1898657965.ap-south-1.elb.amazonaws.com"
-        s1: "http://internal-s1-int-alb-268696201.ap-south-1.elb.amazonaws.com"
-        s2: "http://internal-s2-int-alb-962471675.ap-south-1.elb.amazonaws.com"
-        s3: "http://internal-s3-int-alb-51824138.ap-south-1.elb.amazonaws.com"
-        s4: "http://internal-s4-int-alb-94887976.ap-south-1.elb.amazonaws.com"
-        s7: "http://internal-s7-int-alb-2056119716.ap-south-1.elb.amazonaws.com"
-        s8: "http://internal-s8-int-alb-386223465.ap-south-1.elb.amazonaws.com"
-        s9: "http://internal-s9-int-alb-1290036311.ap-south-1.elb.amazonaws.com"
-        dev4: "http://internal-dev4-int-alb-2036348797.ap-south-1.elb.amazonaws.com"
-        dev5: "http://internal-dev5-int-alb-860243805.ap-south-1.elb.amazonaws.com"
+env_mappings:
+  s0:
+    alb: "http://internal-s0-int-alb-1898657965.ap-south-1.elb.amazonaws.com"
+  s1:
+    alb: "http://internal-s1-int-alb-268696201.ap-south-1.elb.amazonaws.com"
+  s2:
+    alb: "http://internal-s2-int-alb-962471675.ap-south-1.elb.amazonaws.com"
+  s3:
+    alb: "http://internal-s3-int-alb-51824138.ap-south-1.elb.amazonaws.com"
+  s4:
+    alb: "http://internal-s4-int-alb-94887976.ap-south-1.elb.amazonaws.com"
+  s7:
+    alb: "http://internal-s7-int-alb-2056119716.ap-south-1.elb.amazonaws.com"
+  s8:
+    alb: "http://internal-s8-int-alb-386223465.ap-south-1.elb.amazonaws.com"
+  s9:
+    alb: "http://internal-s9-int-alb-1290036311.ap-south-1.elb.amazonaws.com"
+  dev4:
+    alb: "http://internal-dev4-int-alb-2036348797.ap-south-1.elb.amazonaws.com"
+  dev5:
+    alb: "http://internal-dev5-int-alb-860243805.ap-south-1.elb.amazonaws.com"
+  uat:
+    alb: "http://internal-uat-alb-internal-533139398.ap-south-1.elb.amazonaws.com"
+  prod:
+    alb: "http://internal-prod-alb-internal-1242406384.ap-south-1.elb.amazonaws.com"
+  hongs-s0:
+    alb: "https://hongs-s0-backend-int-alb.hongskitchen.in"
+  hongs-s1:
+    alb: "https://hongs-s1-backend-int-alb.hongskitchen.in"
+  hongs-prod:
+    alb: "https://hongs-prod-backend-int-alb.hongskitchen.in"
+  nextgen-s1:
+    alb: "http://nextgen-s1-internal.dominosindia.in"
+  nextgen-s2:
+    alb: "http://nextgen-s2-internal.dominosindia.in"

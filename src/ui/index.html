@@ -227,7 +227,8 @@
 
     <h2>Health Matrix</h2>
     <div style="margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center;">
-        <button id="fixAllBtn" onclick="applyBulkRemediation()" style="background: var(--warning); display: none;">Fix All Missing Keys</button>
+        <button id="fixAllBtn" onclick="applyBulkRemediation(false)" style="background: var(--info); display: none;">Fix All Locally</button>
+        <button id="fixAllMrBtn" onclick="applyBulkRemediation(true)" style="background: var(--warning); display: none;">Fix All & Create MR</button>
         <div id="scanStatus" style="font-size: 0.9rem; color: var(--text-dim);"></div>
     </div>
 
@@ -465,7 +466,10 @@
                         <td><span class="badge badge-${row.severity}">${row.severity}</span></td>
                         <td>
                             ${row.diff_type === 'MISSING_KEY' ? 
-                                `<button onclick="applyRemediation(${row.id})" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; background: var(--info); width: auto;">Fix</button>` : 
+                                `<div style="display:flex; gap:0.25rem;">
+                                    <button onclick="applyRemediation(${row.id}, false)" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; background: var(--info); width: auto;">Fix Loc</button>
+                                    <button onclick="applyRemediation(${row.id}, true)" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; background: var(--warning); width: auto;">Fix & MR</button>
+                                 </div>` : 
                                 ''}
                         </td>
                     </tr>
@@ -497,6 +501,7 @@
             loadMatrix(data.scan_id);
             window.currentScanId = data.scan_id;
             document.getElementById('fixAllBtn').style.display = 'block';
+            document.getElementById('fixAllMrBtn').style.display = 'block';
             await loadDetails(data.drifts);
         }
 
@@ -524,15 +529,16 @@
             document.body.removeChild(link);
         }
 
-        async function applyRemediation(recordId) {
-            if (!confirm('Are you sure you want to add this missing key? A backup will be created and environment-specific values (like ALBs) will be automatically transformed.')) return;
+        async function applyRemediation(recordId, createMr) {
+            const mrMsg = createMr ? " AND create a GitLab Merge Request" : "";
+            if (!confirm(`Are you sure you want to add this missing key${mrMsg}? A backup will be created and environment-specific values will be translated automagically.`)) return;
             
             try {
-                const res = await fetch(`/remediate?record_id=${recordId}`, { method: 'POST' });
+                const res = await fetch(`/remediate?record_id=${recordId}&create_mr=${createMr}`, { method: 'POST' });
                 const data = await res.json();
                 
                 if (data.status === 'success') {
-                    alert('Successfully remediated!');
+                    alert('Success: ' + data.message);
                     // Optionally rerun scan to update view
                     runScan();
                 } else {
@@ -543,16 +549,17 @@
             }
         }
 
-        async function applyBulkRemediation() {
+        async function applyBulkRemediation(createMr) {
             if (!window.currentScanId) return;
-            if (!confirm('This will attempt to fix ALL missing keys in this scan. Backups will be created for all modified files. Continue?')) return;
+            const mrMsg = createMr ? " Afterwards, a GitLab Merge Request will be opened automatically." : "";
+            if (!confirm(`This will attempt to fix ALL missing keys in this scan.${mrMsg} Continue?`)) return;
 
             try {
-                const res = await fetch(`/remediate/bulk?scan_id=${window.currentScanId}`, { method: 'POST' });
+                const res = await fetch(`/remediate/bulk?scan_id=${window.currentScanId}&create_mr=${createMr}`, { method: 'POST' });
                 const data = await res.json();
                 
                 if (data.status === 'success') {
-                    alert(`Bulk remediation complete! Fixed ${data.remediated}/${data.total} keys.`);
+                    alert(`Success: ${data.message}`);
                     runScan();
                 } else {
                     alert('Error: ' + data.detail);

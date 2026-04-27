@@ -2,6 +2,7 @@
 venv/
 env/
 .env
+.env*
 
 # Application Storage & Cloned Repositories
 data/repos/

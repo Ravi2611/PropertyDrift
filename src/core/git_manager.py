@@ -85,3 +85,96 @@ class GitManager:
         if result.returncode != 0:
             return None
         return result.stdout
+
+    def push_with_mr(self, repo_path: str, files: list) -> str:
+        """Commits changes and creates a GitLab Merge Request."""
+        import time
+        branch_name = f"driftguard-fix-{int(time.time())}"
+        
+        logger.info(f"Creating new branch {branch_name} in {repo_path}")
+        
+        # Ensure we are fully up to date and not on a detached HEAD before branching
+        # (Assuming we are generally on 'master' or main here)
+        
+        # 1. Create and checkout new branch
+        subprocess.run(["git", "-C", repo_path, "checkout", "-b", branch_name], check=True, capture_output=True)
+        
+        # 2. Add modified files
+        for f in files:
+            abs_f = os.path.abspath(f)
+            subprocess.run(["git", "-C", repo_path, "add", abs_f], check=True, capture_output=True)
+
+            # Also stage the backup if it exists / was changed
+            base, ext = os.path.splitext(abs_f)
+            # Find and add any backups
+            for file in os.listdir(os.path.dirname(abs_f)):
+                if file.startswith(os.path.basename(base) + "_backup") and file.endswith(ext):
+                    backup_path = os.path.join(os.path.dirname(abs_f), file)
+                    subprocess.run(["git", "-C", repo_path, "add", backup_path], check=True, capture_output=True)
+
+        # 3. Commit
+        commit_msg = "DriftGuard: Automated configuration remediation"
+        result = subprocess.run(["git", "-C", repo_path, "commit", "-m", commit_msg], capture_output=True, text=True)
+        
+        if "nothing to commit" in result.stdout:
+            logger.info("Nothing to commit. Skipping MR creation.")
+            subprocess.run(["git", "-C", repo_path, "checkout", "-"], check=True, capture_output=True)
+            return "No changes to commit"
+
+        # 4. Handle Credentials and Push
+        git_user = os.environ.get("GIT_USERNAME")
+        git_token = os.environ.get("GIT_TOKEN")
+        git_domain = os.environ.get("GIT_DOMAIN", "gitlab.dominosindia.in")
+        
+        if git_user and git_token:
+            # We must get the repository slug out of the remote
+            rem_res = subprocess.run(["git", "-C", repo_path, "config", "--get", "remote.origin.url"], capture_output=True, text=True)
+            remote_url = rem_res.stdout.strip()
+            
+            # Simple assumption it is https
+            if remote_url.startswith("https://"):
+                authenticated_url = remote_url.replace(f"https://{git_domain}", f"https://{git_user}:{git_token}@{git_domain}")
+                subprocess.run(["git", "-C", repo_path, "remote", "set-url", "origin", authenticated_url], check=True)
+                logger.info("Injected Git credentials into remote origin.")
+        
+        # 5. Push with GitLab MR options
+        logger.info(f"Pushing branch {branch_name} and opening Merge Request...")
+        push_cmd = [
+            "git", "-C", repo_path, "push",
+            "-o", "merge_request.create",
+            "-o", "merge_request.target=master",
+            "origin", branch_name
+        ]
+        
+        push_res = subprocess.run(push_cmd, capture_output=True, text=True)
+        
+        if push_res.returncode != 0:
+            logger.error(f"Push failed: {push_res.stderr}")
+            raise Exception(f"Git push failed: {push_res.stderr}")
+            
+        # 6. Restore the uncommitted state on master so the UI dashboard stays green
+        logger.info("Restoring modified state locally to master to sync UI...")
+        subprocess.run(["git", "-C", repo_path, "checkout", "master"], capture_output=True)
+        for f in files:
+            # f is like 'data/repos/stage-cloud-config/post-order/stage/s1/application.yml'
+            # repo_path is 'data/repos/stage-cloud-config'
+            rel_f = os.path.relpath(f, repo_path)
+            
+            # Bring the exact file changes into master's working tree
+            res = subprocess.run(["git", "-C", repo_path, "checkout", branch_name, "--", rel_f], capture_output=True, text=True)
+            if res.returncode != 0:
+                logger.error(f"Failed to restore {rel_f}: {res.stderr}")
+                    
+            # Bring any related surgical backups
+            base, ext = os.path.splitext(f)
+            # Find and add any backups
+            for file in os.listdir(os.path.dirname(os.path.abspath(f))):
+                if file.startswith(os.path.basename(base) + "_backup") and file.endswith(ext):
+                    backup_rel = os.path.relpath(os.path.join(os.path.dirname(os.path.abspath(f)), file), repo_path)
+                    subprocess.run(["git", "-C", repo_path, "checkout", branch_name, "--", backup_rel], capture_output=True)
+                    
+        # Unstage them so they don't break the scanner or next branching operations
+        subprocess.run(["git", "-C", repo_path, "reset"], capture_output=True)
+
+        logger.info(f"Merge Request successfully opened for {branch_name}!")
+        return branch_name

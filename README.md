@@ -685,15 +685,6 @@ Named loggers per module: `API`, `Engine`, `Git`, `Rules`, `Remediator`
 
 ## Deployment
 
-### Required Before Deploying
-
-| Item | Status | Notes |
-|------|--------|-------|
-| `Dockerfile` | ⬜ Pending | Needed to containerize the app |
-| `requirements.txt` | ⬜ Pending | All Python dependencies |
-| `config/rules.yaml` | ⬜ Must be provided | Bake into image or mount as ConfigMap |
-| Git credentials | ⬜ Must be set | As environment variables or secrets |
-
 ### Deployment Checklist (for Infra Team)
 
 ```
@@ -710,12 +701,6 @@ Environment Variables (Secrets):
   GIT_USERNAME  = <gitlab-username>
   GIT_TOKEN     = <gitlab-pat-token>
   GIT_DOMAIN    = <your-gitlab-domain>
-
-Config File to Mount:
-  config/rules.yaml  →  /app/config/rules.yaml
-
-Static UI Files:
-  src/ui/  →  /app/src/ui/  (served at / by server.py)
 ```
 
 ---

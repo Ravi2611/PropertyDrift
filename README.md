@@ -1,143 +1,723 @@
-# DriftGuard: Configuration Health & Drift Management System
+# DriftGuard 🛡️
 
-DriftGuard is a production-grade configuration drift detection and remediation system. It is designed to intelligently monitor, compare, and fix configuration discrepancies across different service environments (e.g., UAT vs. Production) stored in Git repositories. 
+> **Automated Configuration Drift Detection & Remediation for GitLab-hosted config repositories.**
 
-Unlike traditional diff tools, DriftGuard understands the **semantic structure** of YAML and Properties files. It can safely merge missing keys, intelligently inherit quoting styles ("Mirror Styling"), and surgically version-control your files before making any modifications.
-
----
-
-## ✨ Key Features
-- **Semantic Comparison:** Parses `.yml` and `.properties` files as data objects, not raw text, ignoring trivial whitespace differences.
-- **Surgical Backup Strategy:** Automatically rotates backups based on your Git history (`_backup`, `_backup_1`, etc.) **only** for the files you are actively fixing. It never spams your repository with aggressive global backups.
-- **Mirror Styling:** When fixing a missing key, DriftGuard inspects the source baseline file to figure out if it used single quotes, double quotes, or no quotes, and perfectly mirrors that style into the target file.
-- **Noise Reduction Rules:** Uses `rules.yaml` to define environment-specific keys (like DB passwords) that *should* drift, or to flat-out ignore noisy keys.
+DriftGuard scans your Git-hosted configuration repositories, detects when environments have drifted apart (missing keys, value mismatches, type mismatches), and can automatically fix them — with optional GitLab Merge Request creation.
 
 ---
 
-## 🚀 Step-by-Step Local Setup Guide
+## Table of Contents
 
-Follow these instructions to get DriftGuard running on your local machine from scratch.
+- [What is Configuration Drift?](#what-is-configuration-drift)
+- [How DriftGuard Works](#how-driftguard-works)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Local Setup](#local-setup)
+- [Configuration — rules.yaml](#configuration--rulesyaml)
+- [Environment Variables](#environment-variables)
+- [Running the Application](#running-the-application)
+- [API Reference](#api-reference)
+- [Typical Workflow](#typical-workflow)
+- [Supported File Types](#supported-file-types)
+- [Drift Types & Severity](#drift-types--severity)
+- [Remediation — How it Works](#remediation--how-it-works)
+- [Git & MR Integration](#git--mr-integration)
+- [Logs](#logs)
+- [Deployment](#deployment)
 
-### 1. Prerequisites
-Ensure you have the following installed on your system:
-* **Python 3.9+** (`python --version`)
-* **Git** (`git --version`)
-* A Bash-compatible terminal (Terminal on Mac/Linux, Git Bash or WSL on Windows).
+---
 
-### 2. Set Up the Virtual Environment
-We strongly recommend running DriftGuard inside an isolated Python virtual environment to prevent dependency conflicts.
+## What is Configuration Drift?
 
-```bash
-# 1. Navigate to the root directory of the DriftGuard project
-cd /path/to/PropertyDrift
+In microservice architectures, configuration files exist per environment — `s0`, `s1`, `uat`, `prod`. Over time, keys get added to one environment but forgotten in others. This is **configuration drift**.
 
-# 2. Create the virtual environment (named 'venv')
-python3 -m venv venv
+**Example:**
 
-# 3. Activate the virtual environment
-# On Mac/Linux:
-source venv/bin/activate
-# On Windows (Command Prompt):
-# venv\Scripts\activate.bat
+```yaml
+# s0/application.yml (baseline - correct)
+server:
+  port: 8080
+  timeout: 30
+feature:
+  payments: true
+
+# s1/application.yml (drifted - missing keys!)
+server:
+  port: 8080
 ```
 
-*(You will know this worked if your terminal prompt now starts with `(venv)`)*
+DriftGuard detects that `server.timeout` and `feature.payments` are **missing** in `s1` and can automatically insert them with the correct environment-aware values.
 
-### 3. Install Dependencies
-With your virtual environment active, install the required packages:
+---
+
+## How DriftGuard Works
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      DriftGuard Flow                     │
+└─────────────────────────────────────────────────────────┘
+
+  1. Clone Repo          2. Select Service        3. Run Scan
+  ┌──────────┐           ┌──────────────┐         ┌──────────────────┐
+  │ GitLab   │──clone──▶ │ post-order/  │──scan──▶│ Compare s0 vs s1 │
+  │ Config   │           │ payment/     │         │ Compare keys,    │
+  │ Repo     │           │ inventory/   │         │ values, types    │
+  └──────────┘           └──────────────┘         └────────┬─────────┘
+                                                           │
+                                                           ▼
+  5. Create GitLab MR    4. Remediate            Drift Report
+  ┌──────────────────┐   ┌──────────────┐        ┌──────────────────┐
+  │ driftguard-fix-  │◀──│ Insert key   │◀───────│ CRITICAL: 3 keys │
+  │ 1234567890       │   │ Transform    │        │ WARNING:  2 keys │
+  │ (auto branch)    │   │ value for s1 │        │ INFO:     1 key  │
+  └──────────────────┘   └──────────────┘        └──────────────────┘
+```
+
+---
+
+## Project Structure
+
+```
+driftguard/
+├── server.py                # ⚡ Entrypoint — starts uvicorn, loads .env, serves UI
+├── src/
+│   ├── api/
+│   │   ├── main.py          # FastAPI app — all endpoints
+│   │   └── models.py        # SQLModel database models (DriftRecord, ScanHistory)
+│   ├── core/
+│   │   ├── engine.py        # Drift comparison logic — compares env files
+│   │   ├── scanner.py       # Repo scanner — discovers services and environments
+│   │   ├── parser.py        # YAML and .properties file parsers (flattens to dot-notation)
+│   │   ├── remediator.py    # Writes missing keys back into config files
+│   │   ├── rules.py         # Rules engine — ignore keys, severity, value transforms
+│   │   ├── git_manager.py   # Git operations — clone, checkout, push, MR creation
+│   │   └── logger.py        # Shared logger (console + file)
+│   └── ui/                  # Frontend — static files served at /
+│       └── index.html       # (and other static assets)
+├── config/
+│   └── rules.yaml           # ⚠️ Required — drift rules, ignore lists, env mappings
+├── .env                     # Local environment variables (never commit this)
+├── .env.example             # Template for required environment variables
+├── data/
+│   └── repos/               # Cloned repositories are stored here (auto-created)
+├── logs/
+│   └── driftguard.log       # Application logs (auto-created)
+└── README.md
+```
+
+---
+
+## Prerequisites
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Python | 3.10+ | |
+| pip | Latest | |
+| git | Any recent | Must be available in `PATH` |
+| GitLab access | — | PAT token needed for MR creation |
+
+---
+
+## Local Setup
+
+### 1. Clone the DriftGuard repository
+
+```bash
+git clone https://gitlab.your-domain.com/your-team/driftguard.git
+cd driftguard
+```
+
+### 2. Create and activate a virtual environment
+
+```bash
+python -m venv venv
+
+# Linux / macOS
+source venv/bin/activate
+
+# Windows
+venv\Scripts\activate
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Running the Application
-DriftGuard runs a FastAPI backend and a static HTML/JS frontend out of the box.
+### 4. Set up `config/rules.yaml`
+
+This file is **required** for the app to function. See the [Configuration](#configuration--rulesyaml) section below for the full format.
 
 ```bash
-# Start the server
-python server.py
-```
-* **Dashboard:** Open your web browser and go to: `http://localhost:8000`
-* **API Documentation:** Go to: `http://localhost:8000/docs`
-
----
-
-## 💻 How to Use DriftGuard
-
-### 1. Clone or Update a Repository
-1. Open the UI and look at the **"Target Repository"** section.
-2. Enter the clone URL of a repository (e.g., `prod-cloud-config`) and click **Clone / Update Repo**.
-3. DriftGuard will execute a `git clone` (or `git pull` if it already exists) into the `data/repos/` folder.
-*Note: This strictly pulls the environment natively, it does not touch or create backup files during clone.*
-
-### 2. Run a Configuration Scan
-1. Select the **Service** (e.g., `jfl-locator`), the **Baseline Environment**, and the **Target Environment**.
-2. Click **Run Scan**. 
-3. DriftGuard will parse every file and calculate a drift score, isolating keys that are missing or mismatched.
-
-### 3. Remediate (Fix) Drifts
-1. In the scan results, click the **Fix** button next to a missing key.
-2. DriftGuard executes the **Surgical Backup Strategy**:
-   * It checks the *Git HEAD* of the file you are fixing.
-   * If an old backup already exists and your file has been updated via a recent `git pull`, it intelligently archives the old backup as `filename_backup_1.ext`.
-   * It creates a fresh, pristine `filename_backup.ext` showing the state before the fix was applied.
-3. DriftGuard safely injects the missing key into the file.
-
----
-
-## 📂 Directory Structure
-
-```text
-├── config/                 # Service & ignore rules
-│   └── rules.yaml          # Custom drift & severity rules
-├── data/                   # Persistent storage layer
-│   ├── repos/              # Local clones of your configuration Git repositories
-│   └── driftguard.db       # SQLite database storing historical scan metrics
-├── logs/                   # System audit logs
-│   └── driftguard.log      # Detailed operational trace
-├── src/
-│   ├── api/                # FastAPI Endpoints & Data Models
-│   ├── core/               # Engine, GitManager, Remediator, Ruleset
-│   └── ui/                 # Static web assets (HTML/CSS/JS)
-├── server.py               # Main uvicorn entry point
-└── requirements.txt        # Python dependencies
+# At minimum, create an empty valid rules file
+mkdir -p config
+touch config/rules.yaml
 ```
 
+### 5. Create a `.env` file
+
+DriftGuard uses `python-dotenv` — create a `.env` file in the project root and it will be loaded automatically on startup. This is the recommended way to configure the app locally.
+
+```env
+GIT_USERNAME=your-gitlab-username
+GIT_TOKEN=your-personal-access-token
+GIT_DOMAIN=gitlab.your-domain.com
+```
+
+> ⚠️ **Never commit `.env` to Git.** Make sure it is in your `.gitignore`.
+
+A `.env.example` template is provided in the repo — copy it to get started:
+
+```bash
+cp .env.example .env
+# Then edit .env with your actual values
+```
+
+### 6. Run the application
+
+```bash
+venv/bin/python server.py
+```
+
+This single command:
+- Loads your `.env` file automatically
+- Starts the FastAPI backend on port `8000`
+- Serves the frontend UI from `src/ui/` at `http://localhost:8000/`
+
 ---
 
-## 🔐 The Surgical Backup Strategy Explained
-DriftGuard refuses to blindly overwrite your files. When you apply a fix to `application.properties`:
+### Stopping the Application
 
-1. **`application_backup.properties`:** This file represents the absolute latest "pristine" code as you pulled it from Git.
-2. **`application_backup_1.properties`:** If you later run `git pull` from your remote server, and then trigger *another* fix, the system detects that your pristine file evolved. It moves your old archive to `_backup_1` and recreates the primary `_backup`.
-3. **Targeted Precision:** This process **only occurs** on the exact file you clicked "Fix" on. Untouched services in your repository remain perfectly clean for your `git status` commits.
+If the port is already in use (e.g. a previous instance is still running), kill it first:
 
----
-
-## 🛠 Operation & Debugging Scripts
-
-If you need to restart or clean the environment during active development:
-
-**Force Restart Server (Clears blocked ports):**
 ```bash
 lsof -i :8000 -t | xargs kill -9 && venv/bin/python server.py
 ```
 
-**Reset the Database:**
-If you want to clear your historical scan metrics:
-```bash
-rm data/driftguard.db
-# (The system will automatically recreate the database schema on next startup)
+This kills any process on port 8000 and immediately restarts the app.
+
+---
+
+## Configuration — rules.yaml
+
+`config/rules.yaml` is the brain of DriftGuard. It controls what gets ignored, how severity is assigned, and how values are transformed during remediation.
+
+> ⚠️ **This file has nothing to do with Docker or deployment.** It is purely runtime configuration that tells DriftGuard how to interpret differences between environments.
+
+### What each section does
+
+| Section | Purpose |
+|---------|---------|
+| `ignore_keys` | Completely skip these keys during comparison — no drift reported |
+| `ignore_patterns` | Regex-based key ignore — any key matching the pattern is skipped |
+| `env_aware_keys` | Keys where **value differences are expected** across environments (e.g. `db.url` will always differ — that's normal). These are marked `INFO` instead of flagging as drift |
+| `normalizations` | Strip volatile parts of a value before comparing (e.g. strip the hostname from a JDBC URL so only the database name is compared) |
+| `severity` | Override the default severity for specific keys |
+| `env_mappings` | Maps each environment name to its ALB URL — used during **remediation** to automatically swap the correct ALB when inserting a missing key into a target environment |
+
+### Current Configuration
+
+```yaml
+# DriftGuard Rules Configuration
+
+ignore_keys:
+#  - "server.port"   # Uncomment to ignore port differences
+
+# Keys where value differences are EXPECTED across environments.
+# DriftGuard will not flag these as drift — they are environment-specific by design.
+env_aware_keys:
+  - "db.url"
+  - "db.password"
+
+# Keys matching these regex patterns are completely ignored during scanning.
+ignore_patterns:
+  - ".*timestamp.*"
+  - ".*metrics.*"
+
+# Normalization — strip volatile parts before comparing values.
+# This strips the hostname from db.url so only the database name is compared.
+# e.g. "jdbc:mysql://host-s0/mydb" and "jdbc:mysql://host-s1/mydb" are treated as equal.
+normalizations:
+  - pattern: 'db.url'
+    regex: 'jdbc:mysql://[^/]+/(.+)'
+    replace: 'jdbc:mysql://{HOST_REMOVED}/\1'
+
+# Severity overrides — these keys get a fixed severity regardless of diff type.
+severity:
+  CRITICAL:
+    - "feature-flags.new-ui"
+    - "db.user"
+  WARNING:
+    - "server.timeout"
+
+# ALB mappings per environment.
+# Used during REMEDIATION ONLY — when a missing key's value contains an ALB URL,
+# DriftGuard swaps it to the correct ALB for the target environment automatically.
+# This is NOT used for drift detection — it does not affect what gets flagged.
+env_mappings:
+  s0:
+    alb: "http://internal-s0-int-alb-1898657965.ap-south-1.elb.amazonaws.com"
+  s1:
+    alb: "http://internal-s1-int-alb-268696201.ap-south-1.elb.amazonaws.com"
+  s2:
+    alb: "http://internal-s2-int-alb-962471675.ap-south-1.elb.amazonaws.com"
+  s3:
+    alb: "http://internal-s3-int-alb-51824138.ap-south-1.elb.amazonaws.com"
+  s4:
+    alb: "http://internal-s4-int-alb-94887976.ap-south-1.elb.amazonaws.com"
+  s7:
+    alb: "http://internal-s7-int-alb-2056119716.ap-south-1.elb.amazonaws.com"
+  s8:
+    alb: "http://internal-s8-int-alb-386223465.ap-south-1.elb.amazonaws.com"
+  s9:
+    alb: "http://internal-s9-int-alb-1290036311.ap-south-1.elb.amazonaws.com"
+  dev4:
+    alb: "http://internal-dev4-int-alb-2036348797.ap-south-1.elb.amazonaws.com"
+  dev5:
+    alb: "http://internal-dev5-int-alb-860243805.ap-south-1.elb.amazonaws.com"
+  uat:
+    alb: "http://internal-uat-alb-internal-533139398.ap-south-1.elb.amazonaws.com"
+  prod:
+    alb: "http://internal-prod-alb-internal-1242406384.ap-south-1.elb.amazonaws.com"
+  hongs-s0:
+    alb: "https://hongs-s0-backend-int-alb.hongskitchen.in"
+  hongs-s1:
+    alb: "https://hongs-s1-backend-int-alb.hongskitchen.in"
+  hongs-prod:
+    alb: "https://hongs-prod-backend-int-alb.hongskitchen.in"
+  nextgen-s1:
+    alb: "http://nextgen-s1-internal.dominosindia.in"
+  nextgen-s2:
+    alb: "http://nextgen-s2-internal.dominosindia.in"
 ```
 
-**Live Tail Logs:**
-Keep a terminal window open tracking exactly what the engine is evaluating:
-```bash
-tail -f logs/driftguard.log
+### Adding a New Environment
+
+When a new environment is spun up (e.g. `s10`), add its ALB entry under `env_mappings`:
+
+```yaml
+env_mappings:
+  s10:
+    alb: "http://internal-s10-int-alb-XXXXXXXXXX.ap-south-1.elb.amazonaws.com"
 ```
 
-## ⚙️ Customizing the Rules Engine (`rules.yaml`)
-You can fine-tune what DriftGuard considers an error by modifying `config/rules.yaml`.
+No code changes needed — DriftGuard picks it up automatically.
 
-* **`ignore_keys`**: Add keys like `last_updated_time` or `server.port` to this array to instruct the engine to completely skip comparing them.
-* **`env_aware_keys`**: Use this for things like `db.password`. If these values differ between servers, it will flag them as `INFO` instead of a drift error, acknowledging that they *should* be different.
+### Severity Logic (Default, before overrides)
+
+| Drift Type | Default Severity |
+|------------|-----------------|
+| `MISSING_FILE` | CRITICAL |
+| `MISSING_KEY` | CRITICAL |
+| `EXTRA_KEY` | WARNING |
+| `EXTRA_FILE` | INFO |
+| `VALUE_MISMATCH` | INFO |
+| `TYPE_MISMATCH` | WARNING |
+
+---
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GIT_USERNAME` | For MR creation | — | GitLab username |
+| `GIT_TOKEN` | For MR creation | — | GitLab Personal Access Token with `api` and `write_repository` scope |
+| `GIT_DOMAIN` | No | `gitlab.dominosindia.in` | Your GitLab instance domain |
+
+> **Note:** If `GIT_USERNAME` and `GIT_TOKEN` are not set, DriftGuard will still work for read operations (clone, scan, browse). Only MR creation will fail.
+
+### Creating a GitLab Personal Access Token
+
+1. Go to GitLab → Profile → Access Tokens
+2. Create a token with scopes: `api`, `read_repository`, `write_repository`
+3. Set it as `GIT_TOKEN`
+
+---
+
+## Running the Application
+
+### Development
+
+```bash
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Production
+
+```bash
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 2
+```
+
+### Access the Application
+
+| URL | What it is |
+|-----|-----------|
+| `http://localhost:8000/` | **DriftGuard UI** — the frontend dashboard |
+| `http://localhost:8000/docs` | **Swagger UI** — interactive API documentation |
+| `http://localhost:8000/redoc` | **ReDoc** — read-only API documentation |
+| `http://localhost:8000/health` | Health check |
+
+
+
+---
+
+## API Reference
+
+### System
+
+#### `GET /health`
+Health check endpoint. Returns `{"status": "ok"}` if the server is up.
+
+---
+
+### Repository
+
+#### `POST /repo/clone`
+Clones a remote Git config repository locally. If already cloned, fetches latest changes.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `repo_url` | string | ✅ | Full HTTPS URL of the GitLab repo |
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/repo/clone?repo_url=https://gitlab.your-domain.com/team/stage-cloud-config.git"
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "repo_name": "stage-cloud-config",
+  "branches": ["master", "feature/xyz"],
+  "default_branch": "master",
+  "services": ["post-order", "payment", "inventory"]
+}
+```
+
+---
+
+#### `GET /repo/{repo_name}/services`
+Lists all service directories inside a cloned repository.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `repo_name` | path | ✅ | Name of the cloned repo folder |
+| `branch` | query | ❌ | Branch to checkout before scanning (defaults to HEAD) |
+
+**Example:**
+```bash
+curl "http://localhost:8000/repo/stage-cloud-config/services?branch=master"
+```
+
+---
+
+#### `GET /repo/{repo_name}/envs`
+Browses environment folders under a service. Supports hierarchical navigation.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `repo_name` | path | ✅ | Repo folder name |
+| `service` | query | ✅ | Service name (e.g. `post-order`) |
+| `branch` | query | ✅ | Git branch to use |
+| `sub_path` | query | ❌ | Sub-path to drill into (e.g. `stage`) |
+
+**Example:**
+```bash
+curl "http://localhost:8000/repo/stage-cloud-config/envs?service=post-order&branch=master"
+```
+
+**Response:**
+```json
+[
+  {"name": "s0", "is_folder": false, "is_env": true},
+  {"name": "s1", "is_folder": false, "is_env": true},
+  {"name": "uat", "is_folder": false, "is_env": true}
+]
+```
+
+---
+
+### Scanning
+
+#### `GET /scan`
+Runs a drift scan comparing a baseline environment to a target environment.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `repo_name` | query | ✅ | `mock_repo` | Cloned repo name |
+| `service` | query | ✅ | `service-A` | Service to scan |
+| `baseline_env` | query | ✅ | `s0` | Reference environment |
+| `target_env` | query | ✅ | `s1` | Environment being checked |
+| `baseline_branch` | query | ❌ | — | Git branch to checkout before scanning |
+
+**Example:**
+```bash
+curl "http://localhost:8000/scan?repo_name=stage-cloud-config&service=post-order&baseline_env=s0&target_env=s1"
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "scan_id": 42,
+  "drifts_found": 3,
+  "drifts": [
+    {
+      "id": 101,
+      "service": "post-order",
+      "env": "s1",
+      "file": "application.yml",
+      "key": "feature.payments",
+      "base_value": "true",
+      "target_value": null,
+      "diff_type": "MISSING_KEY",
+      "severity": "CRITICAL",
+      "drift_score": 10
+    }
+  ]
+}
+```
+
+---
+
+#### `GET /results`
+Queries all stored drift records with optional filters.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `service` | query | Filter by service name |
+| `env` | query | Filter by environment |
+| `severity` | query | Filter by severity (`CRITICAL`, `WARNING`, `INFO`) |
+
+---
+
+#### `GET /matrix`
+Returns a `service → environment → drift score` matrix. Used for heatmap dashboards.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scan_id` | query | Optional — filter matrix to a specific scan |
+
+**Response:**
+```json
+{
+  "post-order": {
+    "s1": {"score": 20, "timestamp": "2024-01-15T10:30:00"},
+    "uat": {"score": 0, "timestamp": "2024-01-15T10:30:00"}
+  }
+}
+```
+
+---
+
+#### `GET /scans`
+Lists all past scan runs, most recent first.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | query | `50` | Max number of scans to return |
+
+---
+
+#### `GET /scans/{scan_id}/drifts`
+Returns all drift records for a specific scan run.
+
+---
+
+### Remediation
+
+#### `POST /remediate`
+Fixes a single `MISSING_KEY` drift by inserting the key into the target config file.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `record_id` | query | ✅ | — | ID of the drift record to fix |
+| `create_mr` | query | ❌ | `false` | Push fix and open GitLab MR |
+
+**Example:**
+```bash
+# Fix locally only
+curl -X POST "http://localhost:8000/remediate?record_id=101"
+
+# Fix and open MR
+curl -X POST "http://localhost:8000/remediate?record_id=101&create_mr=true"
+```
+
+---
+
+#### `POST /remediate/bulk`
+Fixes **all** `MISSING_KEY` drifts in a scan in one shot.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `scan_id` | query | ✅ | — | Scan ID from `/scan` response |
+| `create_mr` | query | ❌ | `false` | Push all fixes in one MR |
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/remediate/bulk?scan_id=42&create_mr=true"
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "total": 3,
+  "remediated": 3,
+  "message": "3/3 keys remediated. MR Created on branch: driftguard-fix-1705312200",
+  "results": [
+    {"key": "feature.payments", "success": true},
+    {"key": "server.timeout", "success": true},
+    {"key": "db.pool.size", "success": true}
+  ]
+}
+```
+
+---
+
+## Typical Workflow
+
+```
+Step 1 — Clone your config repo
+POST /repo/clone?repo_url=https://gitlab.your-domain.com/team/stage-cloud-config.git
+
+Step 2 — Browse services
+GET /repo/stage-cloud-config/services
+
+Step 3 — Browse environments for a service
+GET /repo/stage-cloud-config/envs?service=post-order&branch=master
+
+Step 4 — Run a drift scan
+GET /scan?repo_name=stage-cloud-config&service=post-order&baseline_env=s0&target_env=s1
+
+Step 5 — Review results (note the scan_id from Step 4)
+GET /scans/42/drifts
+
+Step 6a — Fix everything at once + open MR
+POST /remediate/bulk?scan_id=42&create_mr=true
+
+Step 6b — Or fix individual issues
+POST /remediate?record_id=101&create_mr=false
+```
+
+---
+
+## Supported File Types
+
+| Extension | Parser | Notes |
+|-----------|--------|-------|
+| `.yml` | YAML (ruamel + PyYAML) | Nested keys flattened to dot-notation |
+| `.yaml` | YAML (ruamel + PyYAML) | Same as above |
+| `.properties` | Properties parser | `key=value` format |
+
+Files containing `_backup` in their name are automatically ignored by the scanner.
+
+---
+
+## Drift Types & Severity
+
+| Drift Type | Meaning | Default Severity |
+|------------|---------|-----------------|
+| `MISSING_KEY` | Key exists in baseline but not in target | CRITICAL |
+| `EXTRA_KEY` | Key exists in target but not in baseline | WARNING |
+| `MISSING_FILE` | Entire file exists in baseline but not in target | CRITICAL |
+| `EXTRA_FILE` | File exists in target but not in baseline | INFO |
+| `VALUE_MISMATCH` | Key exists in both but values differ | INFO |
+| `TYPE_MISMATCH` | Key exists in both but types differ (e.g. string vs int) | WARNING |
+
+> Severity can be overridden per key in `config/rules.yaml`.
+
+---
+
+## Remediation — How it Works
+
+DriftGuard only auto-remediates `MISSING_KEY` drifts. Here is exactly what happens:
+
+1. **Backup** — A `_backup` copy of the target file is created from Git HEAD before any changes
+2. **Transform** — The baseline value is transformed for the target environment using `env_mappings` in `rules.yaml` (e.g. ALB hostnames, env tokens like `s0` → `s1`)
+3. **Style Mirror** — The key's formatting style (quotes, indentation) is mirrored from the baseline file using `ruamel.yaml` (preserves your existing YAML style)
+4. **Inject** — The key is inserted into the correct position in the YAML hierarchy or appended to `.properties`
+5. **MR (optional)** — If `create_mr=true`, a new branch `driftguard-fix-{timestamp}` is created and pushed to GitLab with an auto-opened Merge Request targeting `master`
+
+### Backup Rotation
+
+If a file has already been remediated and the backup is stale (differs from current Git HEAD), the old backup is rotated to `_backup_1`, `_backup_2`, etc. and a fresh backup is created.
+
+---
+
+## Git & MR Integration
+
+DriftGuard uses GitLab's push options to create Merge Requests automatically:
+
+```
+git push -o merge_request.create -o merge_request.target=master origin driftguard-fix-1234567
+```
+
+### Credential Setup
+
+Credentials are injected at push time via the environment variables `GIT_USERNAME` and `GIT_TOKEN`. The authenticated URL is temporarily set on `remote.origin.url` before pushing.
+
+> **Only HTTPS remotes are supported** for MR creation. SSH remotes will fall back to system-level credentials.
+
+---
+
+## Logs
+
+All logs are written to two places simultaneously:
+
+| Destination | Level | Location |
+|-------------|-------|----------|
+| Console (stdout) | INFO and above | Terminal output |
+| File | DEBUG and above | `logs/driftguard.log` |
+
+Log format:
+```
+[2024-01-15 10:30:00] [INFO] [API] Request: GET /scan | repo=stage-cloud-config | service=post-order
+[2024-01-15 10:30:01] [DEBUG] [Engine] Analyzing file: application.yml
+[2024-01-15 10:30:01] [INFO] [API] Success: GET /scan | scan_id=42 | drifts_found=3
+```
+
+Named loggers per module: `API`, `Engine`, `Git`, `Rules`, `Remediator`
+
+---
+
+## Deployment
+
+### Required Before Deploying
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `Dockerfile` | ⬜ Pending | Needed to containerize the app |
+| `requirements.txt` | ⬜ Pending | All Python dependencies |
+| `config/rules.yaml` | ⬜ Must be provided | Bake into image or mount as ConfigMap |
+| Git credentials | ⬜ Must be set | As environment variables or secrets |
+
+### Deployment Checklist (for Infra Team)
+
+```
+Service Name    : DriftGuard
+Repo            : driftguard
+Language        : Python 3.10+
+Entrypoint      : venv/bin/python server.py
+Health Check    : GET /health → 200 OK
+Port            : 8000
+Internal/External: Internal only
+Resource Strategy: Low (minimal replicas, no autoscaling needed)
+
+Environment Variables (Secrets):
+  GIT_USERNAME  = <gitlab-username>
+  GIT_TOKEN     = <gitlab-pat-token>
+  GIT_DOMAIN    = <your-gitlab-domain>
+
+Config File to Mount:
+  config/rules.yaml  →  /app/config/rules.yaml
+
+Static UI Files:
+  src/ui/  →  /app/src/ui/  (served at / by server.py)
+```
+
+---
+
+*Built with FastAPI · SQLModel · ruamel.yaml · GitLab Push Options*

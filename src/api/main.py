@@ -27,18 +27,44 @@ def cast_value(val_str: Optional[str], val_type: Optional[str]) -> Any:
         if val_type == 'float':
             return float(val_str)
         if val_type == 'bool':
-            # Handle standard boolean strings
             return val_str.lower() in ('true', '1', 'yes', 't')
         if val_type == 'list' or val_type == 'dict':
-            # For complex types, we might need json.loads, but for now primitives are priority
             import json
-            return json.loads(val_str.replace("'", "\"")) # Basic attempt
+            return json.loads(val_str.replace("'", "\""))
     except Exception as e:
         logger.warning(f"Failed to cast value '{val_str}' to {val_type}: {e}")
     
     return val_str
 
-app = FastAPI(title="DriftGuard API")
+app = FastAPI(
+    title="DriftGuard API",
+    description="""
+## DriftGuard — Configuration Drift Detection & Remediation
+
+DriftGuard scans Git-hosted configuration repositories to detect, report, and automatically fix **configuration drift** across environments (e.g. `s0` → `s1` → `uat`).
+
+### What it does
+- **Clones** GitLab/GitHub config repos and indexes their services and environments
+- **Scans** for drift: missing keys, extra keys, value mismatches, and type mismatches between a baseline and target environment
+- **Scores** each drift by severity (CRITICAL, WARNING, INFO)
+- **Remediates** missing keys automatically, with optional GitLab Merge Request creation
+
+### Key Concepts
+| Term | Meaning |
+|------|---------|
+| **Service** | A folder inside the config repo representing one microservice |
+| **Environment** | A subfolder like `s0`, `s1`, `uat` containing YAML/properties config files |
+| **Baseline** | The reference environment to compare from (usually the stable one) |
+| **Target** | The environment being checked for drift |
+| **Drift Score** | Numeric score — higher means more critical drift |
+| **Remediation** | Automatically inserting missing keys into target config files |
+
+### Supported File Types
+`.yml`, `.yaml`, `.properties`
+    """,
+    version="1.0.0",
+)
+
 git_manager = GitManager()
 
 app.add_middleware(
@@ -52,7 +78,40 @@ app.add_middleware(
 def on_startup():
     create_db_and_tables()
 
-@app.post("/repo/clone")
+
+# ---------------------------------------------------------------------------
+# System
+# ---------------------------------------------------------------------------
+
+@app.get(
+    "/health",
+    tags=["System"],
+    summary="Health Check",
+    description="Returns `ok` if the API server is up and running. Used by infrastructure for liveness probes."
+)
+def health():
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Repository
+# ---------------------------------------------------------------------------
+
+@app.post(
+    "/repo/clone",
+    tags=["Repository"],
+    summary="Clone or Update a Repository",
+    description="""
+Clones a remote Git repository into the local `data/repos/` directory.
+If the repo already exists locally, it fetches the latest changes instead of re-cloning.
+
+**Returns:**
+- `repo_name` — local folder name derived from the URL
+- `branches` — all available remote branches
+- `default_branch` — the HEAD branch (e.g. `master` or `main`)
+- `services` — list of service directories found in the repo root
+    """
+)
 def clone_repo(repo_url: str):
     logger.info(f"Request: POST /repo/clone | url={repo_url}")
     try:
@@ -73,7 +132,18 @@ def clone_repo(repo_url: str):
         logger.error(f"Error: POST /repo/clone | url={repo_url} | error={str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/repo/{repo_name}/services")
+
+@app.get(
+    "/repo/{repo_name}/services",
+    tags=["Repository"],
+    summary="List Services in a Repository",
+    description="""
+Returns all service directories found inside a cloned repository.
+Optionally checks out a specific branch before scanning.
+
+A **service** is any top-level non-hidden folder inside the repo root (e.g. `post-order`, `payment-service`).
+    """
+)
 def get_services(repo_name: str, branch: Optional[str] = None):
     logger.info(f"Request: GET /repo/{repo_name}/services | branch={branch}")
     repo_path = os.path.join("data/repos", repo_name)
@@ -89,18 +159,54 @@ def get_services(repo_name: str, branch: Optional[str] = None):
     services = scanner.get_services(repo_path)
     return services
 
-@app.get("/repo/{repo_name}/envs")
+
+@app.get(
+    "/repo/{repo_name}/envs",
+    tags=["Repository"],
+    summary="Browse Environments for a Service",
+    description="""
+Returns a navigable list of environment folders under a given service.
+Supports hierarchical browsing via `sub_path` for repos that use nested structures like `service/stage/s0/`.
+
+Each item in the response indicates:
+- `name` — folder name (e.g. `s0`, `s1`, `uat`)
+- `is_env` — `true` if the folder directly contains config files
+- `is_folder` — `true` if the folder has sub-directories (drill down further)
+    """
+)
 async def get_envs(repo_name: str, service: str, branch: str, sub_path: str = ""):
     repo_path = os.path.join("data/repos", repo_name)
     if not os.path.exists(repo_path):
         raise HTTPException(status_code=404, detail="Repo not found")
     
-    # Ensure branch is checked out
     git_manager.checkout(repo_path, branch)
-    
     return RepoScanner.get_environments(repo_path, service, sub_path)
 
-@app.get("/scan")
+
+# ---------------------------------------------------------------------------
+# Scanning
+# ---------------------------------------------------------------------------
+
+@app.get(
+    "/scan",
+    tags=["Scanning"],
+    summary="Run a Drift Scan",
+    description="""
+Compares configuration files between a **baseline** and **target** environment for a given service,
+and detects all drift — missing keys, extra keys, value mismatches, and type mismatches.
+
+Each drift is assigned a **severity**:
+| Severity | Meaning |
+|----------|---------|
+| `CRITICAL` | Key is present in baseline but completely missing in target |
+| `WARNING` | Key exists but has an unexpected difference |
+| `INFO` | Difference is expected (e.g. env-aware keys like URLs) |
+
+Results are persisted to the database and returned with a `scan_id` for later retrieval and remediation.
+
+> **Tip:** Use `baseline_branch` to compare across Git branches in addition to environment folders.
+    """
+)
 def run_scan(
     repo_name: str = "mock_repo",
     service: str = "service-A",
@@ -118,7 +224,6 @@ def run_scan(
     rule_manager = RuleManager("config/rules.yaml")
     drift_engine = DriftEngine(rule_manager)
     
-    # Simple case: same branch env comparison
     if baseline_branch:
         git_manager.checkout(repo_path, baseline_branch)
     
@@ -157,7 +262,6 @@ def run_scan(
             all_diffs.append(record)
         
         session.commit()
-        # Refresh and convert to dict explicitly to ensure all fields are captured
         drifts_list = []
         for d in all_diffs:
             session.refresh(d)
@@ -179,7 +283,18 @@ def run_scan(
     logger.info(f"Success: GET /scan | scan_id={scan_id} | drifts_found={len(drifts_list)}")
     return {"status": "success", "scan_id": scan_id, "drifts_found": len(drifts_list), "drifts": drifts_list}
 
-@app.get("/results")
+
+@app.get(
+    "/results",
+    tags=["Scanning"],
+    summary="Query Drift Records",
+    description="""
+Fetches all stored drift records from the database, with optional filters.
+Results are ordered by most recent first.
+
+Use this to query historical drift across any service, environment, or severity level.
+    """
+)
 def get_results(service: Optional[str] = None, env: Optional[str] = None, severity: Optional[str] = None):
     logger.info(f"Request: GET /results | service={service} | env={env} | severity={severity}")
     with Session(engine) as session:
@@ -194,10 +309,21 @@ def get_results(service: Optional[str] = None, env: Optional[str] = None, severi
         results = session.exec(statement.order_by(DriftRecord.timestamp.desc())).all()
     return results
 
-@app.get("/matrix")
+
+@app.get(
+    "/matrix",
+    tags=["Scanning"],
+    summary="Get Drift Score Matrix",
+    description="""
+Returns a nested `service → environment → score` matrix showing the latest drift score for each combination.
+
+Useful for building a **heatmap dashboard** — higher scores mean more critical drift.
+
+Optionally filter by `scan_id` to see the matrix for a specific scan run.
+    """
+)
 def get_matrix(scan_id: Optional[int] = None):
     with Session(engine) as session:
-        # Get latest score per service/env
         statement = select(DriftRecord)
         if scan_id:
             statement = statement.where(DriftRecord.scan_id == scan_id)
@@ -211,19 +337,64 @@ def get_matrix(scan_id: Optional[int] = None):
                 matrix[r.service][r.env] = {"score": r.drift_score, "timestamp": r.timestamp}
     return matrix
 
-@app.get("/scans")
+
+@app.get(
+    "/scans",
+    tags=["Scanning"],
+    summary="List Scan History",
+    description="""
+Returns a paginated list of past scan runs, ordered by most recent first.
+
+Each entry includes the repo, environments compared, total drifts found, and count of critical drifts.
+Use `limit` to control how many records are returned (default: 50).
+    """
+)
 def get_scans(limit: int = 50):
     with Session(engine) as session:
         scans = session.exec(select(ScanHistory).order_by(ScanHistory.timestamp.desc()).limit(limit)).all()
     return scans
 
-@app.get("/scans/{scan_id}/drifts")
+
+@app.get(
+    "/scans/{scan_id}/drifts",
+    tags=["Scanning"],
+    summary="Get All Drifts for a Scan",
+    description="""
+Returns every drift record associated with a specific scan run identified by `scan_id`.
+
+Use this after calling `/scan` to retrieve the full detailed breakdown of what drifted.
+    """
+)
 def get_scan_drifts(scan_id: int):
     with Session(engine) as session:
         drifts = session.exec(select(DriftRecord).where(DriftRecord.scan_id == scan_id)).all()
     return drifts
 
-@app.post("/remediate")
+
+# ---------------------------------------------------------------------------
+# Remediation
+# ---------------------------------------------------------------------------
+
+@app.post(
+    "/remediate",
+    tags=["Remediation"],
+    summary="Remediate a Single Drift",
+    description="""
+Automatically fixes a single **MISSING_KEY** drift record by inserting the missing configuration key
+into the target environment's config file.
+
+**How it works:**
+1. Looks up the drift record by `record_id`
+2. Applies any env-aware value transformations from `rules.yaml` (e.g. swapping `s0` URLs to `s1`)
+3. Mirrors the key's style (quotes, formatting) from the baseline file
+4. Creates a backup of the target file before writing
+5. Injects the key into the correct position in the YAML/properties file
+
+Set `create_mr=true` to automatically push the fix to a new Git branch and open a **GitLab Merge Request**.
+
+> **Note:** Only `MISSING_KEY` drift types are supported for auto-remediation.
+    """
+)
 def remediate(record_id: int, create_mr: bool = False):
     logger.info(f"Request: POST /remediate | record_id={record_id} | create_mr={create_mr}")
     with Session(engine) as session:
@@ -236,13 +407,11 @@ def remediate(record_id: int, create_mr: bool = False):
             logger.warning(f"Remediate failed: Invalid diff_type {record.diff_type} for record {record_id}")
             raise HTTPException(status_code=400, detail="Only MISSING_KEY drifts can be remediated automatically")
         
-        # Get repo_name from history
         history = session.get(ScanHistory, record.scan_id)
         if not history:
             logger.error(f"Remediate failed: Scan history {record.scan_id} missing for record {record_id}")
             raise HTTPException(status_code=404, detail="Scan history not found")
         
-        # Apply transformation logic if it's a MISSING_KEY
         rule_manager = RuleManager("config/rules.yaml")
         final_value_str = rule_manager.transform_value(
             record.key, 
@@ -251,7 +420,6 @@ def remediate(record_id: int, create_mr: bool = False):
             history.baseline_env
         )
         
-        # Cast back to original type
         final_value = cast_value(final_value_str, record.value_type)
         
         if final_value != record.base_value:
@@ -262,7 +430,6 @@ def remediate(record_id: int, create_mr: bool = False):
         repo_path = os.path.join("data/repos", repo_name) if repo_name != "mock_repo" else "mock_repo"
         logger.debug(f"Remediate: Base repo path is {repo_path}")
         
-        # Robust path resolution matching DriftEngine logic
         service_path = os.path.join(repo_path, record.service)
         logger.debug(f"Remediate: Checking service folder at {service_path}")
         
@@ -279,7 +446,6 @@ def remediate(record_id: int, create_mr: bool = False):
             logger.error(f"Remediate failed: Target file not found at {target_file_path}")
             return {"status": "error", "detail": f"Target file not found at {target_file_path}"}
 
-        # Resolve Baseline path for Mirror Styling
         baseline_env_path = os.path.join(service_path, "stage", history.baseline_env)
         if not os.path.exists(baseline_env_path):
             baseline_env_path = os.path.join(service_path, history.baseline_env)
@@ -311,7 +477,28 @@ def remediate(record_id: int, create_mr: bool = False):
         logger.info(f"Success: POST /remediate | record_id={record_id} | path={target_file_path} | key={record.key}")
         return {"status": "success", "message": msg}
 
-@app.post("/remediate/bulk")
+
+@app.post(
+    "/remediate/bulk",
+    tags=["Remediation"],
+    summary="Bulk Remediate All Missing Keys in a Scan",
+    description="""
+Remediates **all MISSING_KEY drifts** found in a given scan run in a single operation.
+
+Iterates through every missing key, applies env-aware value transformations, and injects them
+into the respective target config files. A backup is created for each modified file.
+
+Set `create_mr=true` to batch all fixes into a **single GitLab Merge Request** across all modified files.
+
+**Response includes:**
+- `total` — number of missing keys found
+- `remediated` — number successfully fixed
+- `results` — per-key success/failure breakdown
+- `message` — summary + MR branch name if applicable
+
+> **Tip:** Run `/scan` first to get a `scan_id`, then pass it here to fix everything at once.
+    """
+)
 def remediate_bulk(scan_id: int, create_mr: bool = False):
     logger.info(f"Request: POST /remediate/bulk | scan_id={scan_id} | create_mr={create_mr}")
     with Session(engine) as session:
@@ -338,7 +525,6 @@ def remediate_bulk(scan_id: int, create_mr: bool = False):
         repo_path = os.path.join("data/repos", history.repo_name) if history.repo_name != "mock_repo" else "mock_repo"
 
         for record in records:
-            # Resolve path
             service_path = os.path.join(repo_path, record.service)
             env_path = os.path.join(service_path, "stage", record.env)
             if not os.path.exists(env_path):
@@ -350,7 +536,6 @@ def remediate_bulk(scan_id: int, create_mr: bool = False):
                 results.append({"key": record.key, "success": False, "reason": "File not found"})
                 continue
             
-            # Transform value
             final_value_str = rule_manager.transform_value(
                 record.key, 
                 record.base_value, 
@@ -358,16 +543,13 @@ def remediate_bulk(scan_id: int, create_mr: bool = False):
                 history.baseline_env
             )
             
-            # Cast back to original type
             final_value = cast_value(final_value_str, record.value_type)
             
-            # Resolve Baseline path for Mirror Styling
             baseline_env_path = os.path.join(service_path, "stage", history.baseline_env)
             if not os.path.exists(baseline_env_path):
                 baseline_env_path = os.path.join(service_path, history.baseline_env)
             baseline_file_path = os.path.join(baseline_env_path, record.file)
 
-            # Apply fix
             success = remediator.remediate_missing_key(
                 target_file_path, 
                 record.key, 

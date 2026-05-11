@@ -182,8 +182,8 @@ venv/bin/python server.py
 
 This single command:
 - Loads your `.env` file automatically
-- Starts the FastAPI backend on port `8000`
-- Serves the frontend UI from `src/ui/` at `http://localhost:8000/`
+- Starts the FastAPI backend on port `8051/driftguard`
+- Serves the frontend UI from `src/ui/` at `http://localhost:8051/`
 
 ---
 
@@ -192,10 +192,10 @@ This single command:
 If the port is already in use (e.g. a previous instance is still running), kill it first:
 
 ```bash
-lsof -i :8000 -t | xargs kill -9 && venv/bin/python server.py
+lsof -i :8051 -t | xargs kill -9 && venv/bin/python server.py
 ```
 
-This kills any process on port 8000 and immediately restarts the app.
+This kills any process on port 8051/driftguard and immediately restarts the app.
 
 ---
 
@@ -340,23 +340,23 @@ No code changes needed — DriftGuard picks it up automatically.
 ### Development
 
 ```bash
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn src.api.main:app --host 0.0.0.0 --port 8051 --reload
 ```
 
 ### Production
 
 ```bash
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 2
+uvicorn src.api.main:app --host 0.0.0.0 --port 8051 --workers 2
 ```
 
 ### Access the Application
 
 | URL | What it is |
 |-----|-----------|
-| `http://localhost:8000/` | **DriftGuard UI** — the frontend dashboard |
-| `http://localhost:8000/docs` | **Swagger UI** — interactive API documentation |
-| `http://localhost:8000/redoc` | **ReDoc** — read-only API documentation |
-| `http://localhost:8000/health` | Health check |
+| `http://localhost:8051` | **DriftGuard UI** — the frontend dashboard |
+| `http://localhost:8051/driftguard/docs` | **Swagger UI** — interactive API documentation |
+| `http://localhost:8051/driftguard/redoc` | **ReDoc** — read-only API documentation |
+| `http://localhost:8051/driftguard/health` | Health check |
 
 
 
@@ -382,7 +382,7 @@ Clones a remote Git config repository locally. If already cloned, fetches latest
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/repo/clone?repo_url=https://gitlab.your-domain.com/team/stage-cloud-config.git"
+curl -X POST "http://localhost:8051/driftguard/repo/clone?repo_url=https://gitlab.your-domain.com/team/stage-cloud-config.git"
 ```
 
 **Response:**
@@ -408,7 +408,7 @@ Lists all service directories inside a cloned repository.
 
 **Example:**
 ```bash
-curl "http://localhost:8000/repo/stage-cloud-config/services?branch=master"
+curl "http://localhost:8051/driftguard/repo/stage-cloud-config/services?branch=master"
 ```
 
 ---
@@ -425,7 +425,7 @@ Browses environment folders under a service. Supports hierarchical navigation.
 
 **Example:**
 ```bash
-curl "http://localhost:8000/repo/stage-cloud-config/envs?service=post-order&branch=master"
+curl "http://localhost:8051/driftguard/repo/stage-cloud-config/envs?service=post-order&branch=master"
 ```
 
 **Response:**
@@ -454,7 +454,7 @@ Runs a drift scan comparing a baseline environment to a target environment.
 
 **Example:**
 ```bash
-curl "http://localhost:8000/scan?repo_name=stage-cloud-config&service=post-order&baseline_env=s0&target_env=s1"
+curl "http://localhost:8051/driftguard/scan?repo_name=stage-cloud-config&service=post-order&baseline_env=s0&target_env=s1"
 ```
 
 **Response:**
@@ -539,10 +539,10 @@ Fixes a single `MISSING_KEY` drift by inserting the key into the target config f
 **Example:**
 ```bash
 # Fix locally only
-curl -X POST "http://localhost:8000/remediate?record_id=101"
+curl -X POST "http://localhost:8051/driftguard/remediate?record_id=101"
 
 # Fix and open MR
-curl -X POST "http://localhost:8000/remediate?record_id=101&create_mr=true"
+curl -X POST "http://localhost:8051/remediate?record_id=101&create_mr=true"
 ```
 
 ---
@@ -557,7 +557,7 @@ Fixes **all** `MISSING_KEY` drifts in a scan in one shot.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/remediate/bulk?scan_id=42&create_mr=true"
+curl -X POST "http://localhost:8051/driftguard/driftguard/remediate/bulk?scan_id=42&create_mr=true"
 ```
 
 **Response:**
@@ -693,7 +693,7 @@ Repo            : driftguard
 Language        : Python 3.10+
 Entrypoint      : venv/bin/python server.py
 Health Check    : GET /health → 200 OK
-Port            : 8000
+Port            : 8051/driftguard
 Internal/External: Internal only
 Resource Strategy: Low (minimal replicas, no autoscaling needed)
 

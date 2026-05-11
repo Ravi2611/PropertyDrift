@@ -10,4 +10,4 @@ load_dotenv() # Load variables from .env if it exists
 app.mount("/", StaticFiles(directory="src/ui", html=True), name="ui")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8051)

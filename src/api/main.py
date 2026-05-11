@@ -38,6 +38,7 @@ def cast_value(val_str: Optional[str], val_type: Optional[str]) -> Any:
 
 app = FastAPI(
     title="DriftGuard API",
+    root_path="/driftguard",
     description="""
 ## DriftGuard — Configuration Drift Detection & Remediation
 

@@ -36,6 +36,14 @@ def cast_value(val_str: Optional[str], val_type: Optional[str]) -> Any:
     
     return val_str
 
+def sanitize_for_db(value):
+    """Remove invalid UTF-8 characters that SQLite can't store."""
+    if value is None:
+        return None
+    s = str(value)
+    # Replace surrogate pairs and other invalid UTF-8
+    return s.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+
 app = FastAPI(
     title="DriftGuard API",
     root_path="/driftguard",
@@ -252,8 +260,10 @@ def run_scan(
                 env=d.env,
                 file=d.file,
                 key=d.key,
-                base_value=str(d.base_value) if d.base_value is not None else None,
-                target_value=str(d.target_value) if d.target_value is not None else None,
+                # base_value=str(d.base_value) if d.base_value is not None else None,
+                # target_value=str(d.target_value) if d.target_value is not None else None,
+                base_value=sanitize_for_db(d.base_value),
+                target_value=sanitize_for_db(d.target_value),
                 value_type=d.value_type,
                 diff_type=d.diff_type,
                 severity=d.severity,

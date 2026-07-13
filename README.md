@@ -441,8 +441,17 @@ curl "http://localhost:8051/driftguard/repo/stage-cloud-config/envs?service=post
 
 ### Scanning
 
-#### `GET /scan`
-Runs a drift scan comparing a baseline environment to a target environment.
+DriftGuard supports two comparison modes:
+
+| Mode | Endpoint | Compares |
+|------|----------|----------|
+| **Single-repo** | `GET /scan` | Two environments **inside one repo** (e.g. `s0` vs `s1` of the same service) |
+| **Dual-repo** | `GET /scan/dual` | The same-purpose service folder **across two different repos** (e.g. `repo-a/post-order/s0` vs `repo-b/post-order-web/prod`) |
+
+Both modes persist to the same `ScanHistory` / `DriftRecord` tables. Remediation (`/remediate`, `/remediate/bulk`) works identically for both — in dual-repo mode, writes and any Merge Request go to the **target repo only**; the baseline repo is never modified.
+
+#### `GET /scan` — single-repo mode
+Runs a drift scan comparing a baseline environment to a target environment inside **one** cloned repo.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -451,11 +460,60 @@ Runs a drift scan comparing a baseline environment to a target environment.
 | `baseline_env` | query | ✅ | `s0` | Reference environment |
 | `target_env` | query | ✅ | `s1` | Environment being checked |
 | `baseline_branch` | query | ❌ | — | Git branch to checkout before scanning |
+| `services` | query | ❌ | — | Comma-separated list of services to scan in one run (e.g. `post-order,payment,inventory`). Overrides `service`. All share the same env pair. |
 
-**Example:**
+**Example (single service):**
 ```bash
 curl "http://localhost:8051/driftguard/scan?repo_name=stage-cloud-config&service=post-order&baseline_env=s0&target_env=s1"
 ```
+
+**Example (multiple services in one scan):**
+```bash
+curl "http://localhost:8051/driftguard/scan?repo_name=stage-cloud-config&services=post-order,payment,inventory&baseline_env=s0&target_env=s1"
+```
+
+All selected services land under one `scan_id`; each drift record is attributed to its own service, and Fix All fixes across every service in one MR.
+
+---
+
+#### `GET /scan/dual` — dual-repo mode
+Compares configuration files between two **different** cloned repositories.
+
+Use this when the baseline and target live in separate repos (e.g. a shared config repo vs a service-specific repo, or a legacy vs modern deployment). Both repos must already be cloned via `POST /repo/clone`. Service folder names can differ between the two repos — this endpoint does no auto-matching, it compares exactly the two folders you point it at.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `baseline_repo` | query | ✅ | Local repo name (from `/repo/clone`) — **read-only** reference side |
+| `target_repo` | query | ✅ | Local repo name — the side that will receive any fixes/MR |
+| `baseline_service` | query | ✅ | Service folder inside `baseline_repo` (e.g. `post-order`) |
+| `target_service` | query | ✅ | Service folder inside `target_repo` (e.g. `post-order-web`) |
+| `baseline_env` | query | ✅ | Env folder inside the baseline service |
+| `target_env` | query | ✅ | Env folder inside the target service |
+| `baseline_branch` | query | ❌ | Branch to check out on `baseline_repo` before reading |
+| `target_branch` | query | ❌ | Branch to check out on `target_repo` before reading |
+| `baseline_services` | query | ❌ | Comma-separated baseline services (index-aligned with `target_services`). Overrides `baseline_service`. |
+| `target_services` | query | ❌ | Comma-separated target services (same length as `baseline_services`). Overrides `target_service`. |
+
+**Multi-pair example:**
+```bash
+curl "http://localhost:8051/driftguard/scan/dual?\
+baseline_repo=repo-a&target_repo=repo-b&\
+baseline_services=post-order,payment&target_services=post-order-web,payment-web&\
+baseline_env=s0&target_env=prod"
+```
+
+Each pair is compared independently and all results land under one `scan_id`. Every drift record records both its baseline service and target service, so remediation writes to the correct target folder per record.
+
+**Example:**
+```bash
+curl "http://localhost:8051/driftguard/scan/dual?\
+baseline_repo=stage-cloud-config&target_repo=prod-cloud-config&\
+baseline_service=post-order&target_service=post-order-web&\
+baseline_env=s0&target_env=prod&\
+baseline_branch=master&target_branch=release"
+```
+
+The response shape matches `/scan` and additionally reports `"mode": "dual"`.
 
 **Response:**
 ```json
@@ -579,6 +637,8 @@ curl -X POST "http://localhost:8051/driftguard/driftguard/remediate/bulk?scan_id
 
 ## Typical Workflow
 
+### Single-repo mode
+
 ```
 Step 1 — Clone your config repo
 POST /repo/clone?repo_url=https://gitlab.your-domain.com/team/stage-cloud-config.git
@@ -601,6 +661,31 @@ POST /remediate/bulk?scan_id=42&create_mr=true
 Step 6b — Or fix individual issues
 POST /remediate?record_id=101&create_mr=false
 ```
+
+### Dual-repo mode
+
+```
+Step 1 — Clone BOTH repos
+POST /repo/clone?repo_url=https://gitlab.your-domain.com/team/repo-a.git
+POST /repo/clone?repo_url=https://gitlab.your-domain.com/team/repo-b.git
+
+Step 2 — Browse services + envs on each side (same endpoints as single mode)
+GET /repo/repo-a/services
+GET /repo/repo-a/envs?service=post-order&branch=master
+GET /repo/repo-b/services
+GET /repo/repo-b/envs?service=post-order-web&branch=release
+
+Step 3 — Run a dual-repo drift scan
+GET /scan/dual?baseline_repo=repo-a&target_repo=repo-b\
+             &baseline_service=post-order&target_service=post-order-web\
+             &baseline_env=s0&target_env=prod\
+             &baseline_branch=master&target_branch=release
+
+Steps 4–6 — Identical to single mode.
+Fixes and any Merge Request will land on repo-b (the target). repo-a is never touched.
+```
+
+**UI:** the dashboard has a **Single Repo / Two Repos** toggle at the top of the controls card. In Two Repos mode you get a **Repository A (Baseline)** panel and a **Repository B (Target)** panel, each with its own clone input, branch, service, and env selectors.
 
 ---
 

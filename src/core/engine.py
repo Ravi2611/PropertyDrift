@@ -10,7 +10,7 @@ logger = setup_logger("Engine")
 
 @dataclass
 class DriftDiff:
-    service: str
+    service: str  # TARGET service (used for target file path during remediation)
     env: str
     file: str
     key: str
@@ -19,6 +19,7 @@ class DriftDiff:
     diff_type: str # MISSING_KEY, EXTRA_KEY, VALUE_MISMATCH, TYPE_MISMATCH, MISSING_FILE, EXTRA_FILE
     severity: str
     value_type: Optional[str] = None
+    baseline_service: Optional[str] = None  # BASELINE service (may differ in dual mode)
 
 class DriftEngine:
     def __init__(self, rule_manager: RuleManager):
@@ -74,31 +75,58 @@ class DriftEngine:
             
         return diffs
 
-    def _resolve_env_path(self, repo_path: str, service: str, env: str) -> str:
+    @staticmethod
+    def resolve_env_path(repo_path: str, service: str, env: str) -> str:
+        """Resolve `{repo}/{service}/stage/{env}` if it exists, else `{repo}/{service}/{env}`.
+
+        Public API used by both single-repo and dual-repo scans.
+        """
         service_path = os.path.join(repo_path, service)
         stage_path = os.path.join(service_path, "stage", env)
         if os.path.exists(stage_path):
             return stage_path
         return os.path.join(service_path, env)
 
+    def _resolve_env_path(self, repo_path: str, service: str, env: str) -> str:
+        return self.resolve_env_path(repo_path, service, env)
+
     def compare_environments(self, repo_path: str, service: str, baseline_env: str, target_env: str) -> List[DriftDiff]:
+        """Single-repo compare: same repo, same service, two env folders."""
         logger.info(f"Comparing environments: service={service} ({baseline_env} -> {target_env})")
         base_dir = self._resolve_env_path(repo_path, service, baseline_env)
         target_dir = self._resolve_env_path(repo_path, service, target_env)
-        
+        return self.compare_dirs(
+            base_dir, target_dir,
+            service_label=service, env_label=target_env,
+            baseline_service_label=service,
+        )
+
+    def compare_dirs(self, base_dir: str, target_dir: str, service_label: str, env_label: str,
+                     baseline_service_label: Optional[str] = None) -> List[DriftDiff]:
+        """Compare two absolute env directories from anywhere on disk.
+
+        `service_label` and `env_label` are attached to every DriftDiff for
+        downstream persistence and remediation. In dual-repo mode the caller
+        should pass the TARGET service name and TARGET env name here so
+        remediation later resolves the correct target file path.
+
+        `baseline_service_label` records which BASELINE service each diff came
+        from (defaults to `service_label` for single-repo scans where they are
+        the same). This lets remediation mirror style from the correct baseline
+        folder even in multi-service dual-repo scans.
+        """
         logger.debug(f"Resolved paths: base={base_dir}, target={target_dir}")
-        
+
         if not os.path.exists(base_dir):
             logger.warning(f"Base environment directory not found: {base_dir}")
             return []
-            
+
         def get_files_recursive(directory: str):
             config_files = set()
             if not os.path.exists(directory):
                 return config_files
             for root, _, filenames in os.walk(directory):
                 for f in filenames:
-                    # Reuse the logic from scanner if possible, otherwise use local check
                     if (f.endswith(('.yml', '.yaml', '.properties')) and "_backup" not in f):
                         rel_path = os.path.relpath(os.path.join(root, f), directory)
                         config_files.add(rel_path)
@@ -106,35 +134,39 @@ class DriftEngine:
 
         base_files = get_files_recursive(base_dir)
         target_files = get_files_recursive(target_dir)
-        
+
         logger.debug(f"Files found: base={len(base_files)}, target={len(target_files)}")
-        
+
         all_filenames = base_files | target_files
         all_diffs = []
-        
+
         for filename in all_filenames:
             logger.debug(f"Analyzing file: {filename}")
             if filename not in base_files:
                 all_diffs.append(DriftDiff(
-                    service=service, env=target_env, file=filename, key='',
+                    service=service_label, env=env_label, file=filename, key='',
                     base_value=None, target_value=None,
                     diff_type='EXTRA_FILE', severity=self.rule_manager.get_severity('', 'EXTRA_FILE')
                 ))
                 continue
-            
+
             if filename not in target_files:
                 all_diffs.append(DriftDiff(
-                    service=service, env=target_env, file=filename, key='',
+                    service=service_label, env=env_label, file=filename, key='',
                     base_value=None, target_value=None,
                     diff_type='MISSING_FILE', severity=self.rule_manager.get_severity('', 'MISSING_FILE')
                 ))
                 continue
-                
+
             base_data = parse_config_file(os.path.join(base_dir, filename)) or {}
             target_data = parse_config_file(os.path.join(target_dir, filename)) or {}
-            
-            all_diffs.extend(self.compare_files(service, target_env, filename, base_data, target_data))
-            
+
+            all_diffs.extend(self.compare_files(service_label, env_label, filename, base_data, target_data))
+
+        baseline_label = baseline_service_label or service_label
+        for d in all_diffs:
+            d.baseline_service = baseline_label
+
         return all_diffs
 
     def calculate_drift_score(self, diffs: List[DriftDiff]) -> int:

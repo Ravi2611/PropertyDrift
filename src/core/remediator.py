@@ -1,5 +1,6 @@
 import os
 import shutil
+from collections.abc import Mapping
 from typing import Any, Dict, Optional
 from ruamel.yaml import YAML
 from src.core.logger import setup_logger
@@ -58,20 +59,28 @@ class ConfigRemediator:
                 
         return backup_path
 
-    def remediate_missing_key(self, file_path: str, key: str, value: Any, 
+    def remediate_missing_key(self, file_path: str, key: str, value: Any,
                              baseline_file_path: Optional[str] = None,
                              repo_path: Optional[str] = None,
-                             git_manager: Optional[Any] = None) -> bool:
-        """Adds a missing key to the target file, optionally mirroring style from baseline and versioning backup."""
-        logger.info(f"Remediating missing key '{key}' in {file_path}")
+                             git_manager: Optional[Any] = None,
+                             create_backup: bool = True) -> bool:
+        """Adds a missing key to the target file, optionally mirroring style from baseline and versioning backup.
+
+        When `create_backup` is False, the pre-write `_backup` file is not
+        created or rotated. Any existing backup files on disk from prior runs
+        are left untouched.
+        """
+        logger.info(f"Remediating missing key '{key}' in {file_path} (backup={'on' if create_backup else 'off'})")
         if not os.path.exists(file_path):
             logger.error(f"Target file not found for remediation: {file_path}")
             return False
 
         _, ext = os.path.splitext(file_path)
-        
-        # Always create/verify backup first
-        self.create_backup(file_path, repo_path=repo_path, git_manager=git_manager)
+
+        if create_backup:
+            self.create_backup(file_path, repo_path=repo_path, git_manager=git_manager)
+        else:
+            logger.debug(f"Skipping backup creation for {file_path} (create_backup=False)")
 
         # If baseline provided, try to extract styled value
         styled_value = value
@@ -117,6 +126,20 @@ class ConfigRemediator:
                 if part not in current:
                     logger.debug(f"Remediator: Creating missing parent group '{part}'")
                     current[part] = {}
+                elif current[part] is None:
+                    # Parent key exists but is null (e.g. `menu:` with all its
+                    # children commented out). Promote it to an empty mapping so
+                    # we can nest under it, instead of crashing on None.
+                    logger.debug(f"Remediator: Parent group '{part}' is null; promoting to empty mapping")
+                    current[part] = {}
+                elif not isinstance(current[part], Mapping):
+                    # Parent exists as a scalar/list — we can't safely nest a key
+                    # underneath it without destroying existing data.
+                    logger.error(
+                        f"Cannot insert '{key}': parent '{part}' is a "
+                        f"{type(current[part]).__name__}, not a mapping, in {file_path}"
+                    )
+                    return False
                 current = current[part]
                 logger.debug(f"Remediator: Entered group '{part}'")
 

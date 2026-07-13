@@ -57,17 +57,9 @@
             margin: 1rem 0;
         }
 
-        .status-critical {
-            color: var(--critical);
-        }
-
-        .status-warning {
-            color: var(--warning);
-        }
-
-        .status-info {
-            color: var(--info);
-        }
+        .status-critical { color: var(--critical); }
+        .status-warning { color: var(--warning); }
+        .status-info { color: var(--info); }
 
         table {
             width: 100%;
@@ -76,16 +68,13 @@
             border-radius: 8px;
             overflow: hidden;
             table-layout: fixed;
-            /* Fix layout */
         }
 
-        th,
-        td {
+        th, td {
             text-align: left;
             padding: 1rem;
             border-bottom: 1px solid #334155;
             word-break: break-all;
-            /* Prevent overflow */
             font-size: 0.85rem;
         }
 
@@ -98,51 +87,15 @@
             background: #2d3a4f;
         }
 
-        /* Column Widths */
-        th:nth-child(1) {
-            width: 12%;
-        }
-
-        /* Service */
-        th:nth-child(2) {
-            width: 8%;
-        }
-
-        /* Env */
-        th:nth-child(3) {
-            width: 15%;
-        }
-
-        /* File */
-        th:nth-child(4) {
-            width: 15%;
-        }
-
-        /* Key */
-        th:nth-child(5) {
-            width: 18%;
-        }
-
-        /* Base */
-        th:nth-child(6) {
-            width: 18%;
-        }
-
-        /* Target */
-        th:nth-child(7) {
-            width: 8%;
-        }
-
-        /* Type */
-        th:nth-child(8) {
-            width: 6%;
-        }
-
-        /* Severity */
-        th:nth-child(9) {
-            width: 5%;
-        }
-        /* Actions */
+        th:nth-child(1) { width: 12%; }
+        th:nth-child(2) { width: 8%; }
+        th:nth-child(3) { width: 15%; }
+        th:nth-child(4) { width: 15%; }
+        th:nth-child(5) { width: 18%; }
+        th:nth-child(6) { width: 18%; }
+        th:nth-child(7) { width: 8%; }
+        th:nth-child(8) { width: 6%; }
+        th:nth-child(9) { width: 5%; }
 
         .badge {
             padding: 0.25rem 0.5rem;
@@ -151,20 +104,9 @@
             font-weight: bold;
         }
 
-        .badge-CRITICAL {
-            background: var(--critical);
-            color: white;
-        }
-
-        .badge-WARNING {
-            background: var(--warning);
-            color: white;
-        }
-
-        .badge-INFO {
-            background: var(--info);
-            color: white;
-        }
+        .badge-CRITICAL { background: var(--critical); color: white; }
+        .badge-WARNING  { background: var(--warning);  color: white; }
+        .badge-INFO     { background: var(--info);     color: white; }
 
         .controls {
             margin-bottom: 2rem;
@@ -180,45 +122,223 @@
             cursor: pointer;
         }
 
-        button:hover {
-            opacity: 0.9;
+        button:hover { opacity: 0.9; }
+
+        .mode-toggle {
+            display: inline-flex;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            overflow: hidden;
         }
+
+        .mode-toggle button {
+            background: transparent;
+            color: var(--text-dim);
+            border: none;
+            padding: 0.6rem 1.25rem;
+            border-radius: 0;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .mode-toggle button.active {
+            background: var(--primary);
+            color: var(--bg-color);
+        }
+
+        .repo-panel {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 1.25rem;
+        }
+
+        .repo-panel h3 {
+            margin: 0 0 1rem 0;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .repo-panel h3 .tag {
+            display: inline-block;
+            margin-left: 0.5rem;
+            padding: 0.1rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+        .tag-baseline { background: #1e40af; color: white; }
+        .tag-target   { background: #b45309; color: white; }
+
+        .field-row {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .field-row input,
+        .field-row select {
+            flex: 1;
+            padding: 0.6rem;
+            border-radius: 6px;
+            border: 1px solid #334155;
+            background: #1e293b;
+            color: white;
+        }
+
+        .field-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .field-grid label {
+            display: block;
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .field-grid select,
+        .field-grid .tiered-selects select {
+            width: 100%;
+            padding: 0.5rem;
+            border-radius: 4px;
+            background: #334155;
+            color: white;
+            border: none;
+            margin-bottom: 0.35rem;
+        }
+
+        .dual-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .repo-status {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 0.25rem;
+        }
+        .repo-status.ok { color: var(--success); }
     </style>
 </head>
 
 <body>
     <h1>DriftGuard Configuration Health</h1>
 
-    <div class="controls card" style="margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1rem;">
-        <div style="display: flex; gap: 1rem; align-items: center;">
-            <input type="text" id="repoUrl" placeholder="https://github.com/user/repo"
-                style="flex: 1; padding: 0.75rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white;">
-            <button onclick="cloneRepo()">Clone Repository</button>
-            <button onclick="location.href='/history.html'" style="background: #334155;">View History</button>
+    <div class="controls card" style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <span style="color: var(--text-dim); font-size: 0.85rem;">Comparison mode:</span>
+                <div class="mode-toggle" role="tablist">
+                    <button id="modeBtnSingle" class="active" onclick="setMode('single')">Single Repo</button>
+                    <button id="modeBtnDual" onclick="setMode('dual')">Two Repos</button>
+                </div>
+            </div>
+            <button onclick="location.href='/history.html'" style="background: #334155; color: white;">View History</button>
         </div>
 
-        <div id="gitControls" style="display: none; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
-            <div>
-                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Service</label>
-                <select id="serviceSelect" onchange="loadEnvs()"
-                    style="width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;"></select>
+        <!-- SINGLE-REPO PANEL -->
+        <div id="singleModePanel">
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <input type="text" id="repoUrl" placeholder="https://github.com/user/repo"
+                    style="flex: 1; padding: 0.75rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white;">
+                <button onclick="cloneRepo()">Clone Repository</button>
             </div>
-            <div>
-                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Branch</label>
-                <select id="sourceBranch" onchange="loadEnvs()"
-                    style="width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;"></select>
-            </div>
-            <div id="sourceEnvContainer">
-                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Source Env</label>
-                <div class="tiered-selects" id="sourceTiers"></div>
-            </div>
-            <div id="targetEnvContainer">
-                <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Target Env</label>
-                <div class="tiered-selects" id="targetTiers"></div>
+
+            <div id="gitControls" style="display: none; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem; align-items: start;">
+                <div>
+                    <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Services <span id="svcCount" style="opacity: 0.7;"></span></label>
+                    <div style="display: flex; gap: 0.75rem; margin-bottom: 0.35rem;">
+                        <a href="#" onclick="selectAllServices(true); return false;" style="color: var(--primary); font-size: 0.7rem; text-decoration: none;">Select all</a>
+                        <a href="#" onclick="selectAllServices(false); return false;" style="color: var(--text-dim); font-size: 0.7rem; text-decoration: none;">Clear</a>
+                    </div>
+                    <div id="serviceChecklist" style="max-height: 120px; overflow-y: auto; background: #334155; border-radius: 4px; padding: 0.4rem 0.6rem;"></div>
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Branch</label>
+                    <select id="sourceBranch" onchange="loadEnvs()"
+                        style="width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;"></select>
+                </div>
+                <div id="sourceEnvContainer">
+                    <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Source Env</label>
+                    <div class="tiered-selects" id="sourceTiers"></div>
+                </div>
+                <div id="targetEnvContainer">
+                    <label style="display: block; color: var(--text-dim); margin-bottom: 0.5rem;">Target Env</label>
+                    <div class="tiered-selects" id="targetTiers"></div>
+                </div>
             </div>
         </div>
-        <div id="scanAction" style="display: none; margin-top: 1.5rem; border-top: 1px solid #334155; padding-top: 1.5rem;">
-             <button onclick="runScan()" 
+
+        <!-- DUAL-REPO PANEL -->
+        <div id="dualModePanel" style="display: none;">
+            <div class="dual-grid">
+                <!-- Baseline (Repo A) -->
+                <div class="repo-panel">
+                    <h3>Repository A <span class="tag tag-baseline">Baseline</span></h3>
+                    <div class="field-row">
+                        <input type="text" id="dualRepoUrlA" placeholder="https://gitlab.your-domain.com/team/repo-a.git">
+                        <button onclick="cloneDual('A')">Clone</button>
+                    </div>
+                    <div id="dualRepoStatusA" class="repo-status">Not cloned yet.</div>
+                    <div id="dualPickersA" style="display: none; margin-top: 1rem;">
+                        <div>
+                            <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.35rem;">Branch</label>
+                            <select id="dualBranchA" onchange="loadDualEnvs('A')"
+                                style="width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;"></select>
+                        </div>
+                        <div style="margin-top: 0.75rem;">
+                            <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.35rem;">Environment</label>
+                            <div class="tiered-selects" id="dualEnvTiersA"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Target (Repo B) -->
+                <div class="repo-panel">
+                    <h3>Repository B <span class="tag tag-target">Target · Fixes go here</span></h3>
+                    <div class="field-row">
+                        <input type="text" id="dualRepoUrlB" placeholder="https://gitlab.your-domain.com/team/repo-b.git">
+                        <button onclick="cloneDual('B')">Clone</button>
+                    </div>
+                    <div id="dualRepoStatusB" class="repo-status">Not cloned yet.</div>
+                    <div id="dualPickersB" style="display: none; margin-top: 1rem;">
+                        <div>
+                            <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.35rem;">Branch</label>
+                            <select id="dualBranchB" onchange="loadDualEnvs('B')"
+                                style="width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;"></select>
+                        </div>
+                        <div style="margin-top: 0.75rem;">
+                            <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.35rem;">Environment</label>
+                            <div class="tiered-selects" id="dualEnvTiersB"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Service pairs builder -->
+            <div id="servicePairsSection" style="display: none; margin-top: 1.25rem; background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <label style="color: var(--text-dim); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;">
+                        Service Pairs <span style="opacity: 0.7; text-transform: none; font-weight: 400;">(baseline &harr; target)</span>
+                    </label>
+                    <button onclick="addServicePairRow()" style="background: #334155; color: white; font-size: 0.75rem; padding: 0.45rem 0.9rem;">+ Add pair</button>
+                </div>
+                <div id="servicePairsList"></div>
+            </div>
+        </div>
+
+        <div id="scanAction" style="display: none; margin-top: 0.5rem; border-top: 1px solid #334155; padding-top: 1.5rem;">
+             <button onclick="runScan()"
                 style="width: 100%; background: #10b981 !important; color: white !important; font-weight: bold; padding: 1.25rem; border-radius: 8px; border: none; cursor: pointer; font-size: 1.1rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                 🚀 Run Comparison Scan
              </button>
@@ -226,9 +346,14 @@
     </div>
 
     <h2>Health Matrix</h2>
-    <div style="margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center;">
+    <div style="margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
         <button id="fixAllBtn" onclick="applyBulkRemediation(false)" style="background: var(--info); display: none;">Fix All Locally</button>
         <button id="fixAllMrBtn" onclick="applyBulkRemediation(true)" style="background: var(--warning); display: none;">Fix All & Create MR</button>
+        <label id="backupToggleLabel" title="When on, a _backup file is written next to each modified config and included in the MR."
+            style="display: none; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-dim); background: #0f172a; border: 1px solid #334155; padding: 0.5rem 0.85rem; border-radius: 6px; cursor: pointer;">
+            <input type="checkbox" id="createBackupToggle" checked style="accent-color: var(--primary); width: 1rem; height: 1rem;">
+            Create backup files <span style="color: var(--text-dim); opacity: 0.7;">(recommended)</span>
+        </label>
         <div id="scanStatus" style="font-size: 0.9rem; color: var(--text-dim);"></div>
     </div>
 
@@ -236,13 +361,19 @@
         <!-- Matrix cards will load here -->
     </div>
 
-    <div
-        style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem; margin-top: 3rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem; margin-top: 3rem;">
         <div>
             <h2 style="margin: 0;">Detail View <small
                     style="font-size: 0.9rem; color: var(--text-dim); font-weight: normal;">(Current Run Only)</small></h2>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+                <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.25rem;">Service</label>
+                <select id="serviceFilter" onchange="applyFilters()"
+                    style="padding: 0.4rem; border-radius: 4px; background: #334155; color: white; border: none; font-size: 0.8rem; min-width: 140px;">
+                    <option value="ALL">All Services</option>
+                </select>
+            </div>
             <div>
                 <label style="display: block; color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.25rem;">Filter by Type</label>
                 <select id="typeFilter" onchange="applyFilters()"
@@ -284,8 +415,25 @@
     </table>
 
     <script>
-        let currentRepo = '';
+        // ---------- State ----------
+        let mode = 'single';            // 'single' | 'dual'
+        let currentRepo = '';           // single-mode repo
+        const dualRepos = { A: '', B: '' };          // dual-mode repo names (per side)
+        const dualServiceLists = { A: [], B: [] };   // available service folders per side
 
+        // ---------- Mode toggle ----------
+        function setMode(newMode) {
+            mode = newMode;
+            document.getElementById('modeBtnSingle').classList.toggle('active', mode === 'single');
+            document.getElementById('modeBtnDual').classList.toggle('active', mode === 'dual');
+            document.getElementById('singleModePanel').style.display = (mode === 'single') ? 'block' : 'none';
+            document.getElementById('dualModePanel').style.display   = (mode === 'dual')   ? 'block' : 'none';
+            document.getElementById('scanAction').style.display = 'none';
+        }
+
+        // =========================================================
+        // SINGLE-REPO MODE (unchanged behavior)
+        // =========================================================
         async function cloneRepo() {
             const url = document.getElementById('repoUrl').value;
             if (!url) return alert('Please enter a URL');
@@ -298,16 +446,13 @@
                 document.getElementById('gitControls').style.display = 'grid';
                 document.getElementById('scanAction').style.display = 'block';
 
-                // Fill branches
                 const branchOptions = data.branches.map(b => `<option value="${b}">${b}</option>`).join('');
                 document.getElementById('sourceBranch').innerHTML = branchOptions;
-
                 if (data.default_branch) {
                     document.getElementById('sourceBranch').value = data.default_branch;
                 }
 
-                // Fill services
-                document.getElementById('serviceSelect').innerHTML = data.services.map(s => `<option value="${s}">${s}</option>`).join('');
+                populateServiceChecklist(data.services);
 
                 loadEnvs();
             } else {
@@ -315,27 +460,60 @@
             }
         }
 
+        // ---- Single-mode service multi-select ----
+        function populateServiceChecklist(services) {
+            const box = document.getElementById('serviceChecklist');
+            box.innerHTML = services.map((s, i) => `
+                <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; font-size: 0.8rem; cursor: pointer;">
+                    <input type="checkbox" class="svc-check" value="${s}" ${i === 0 ? 'checked' : ''} onchange="onServiceSelectionChange()" style="accent-color: var(--primary);">
+                    ${s}
+                </label>
+            `).join('');
+            updateSvcCount();
+        }
+
+        function getSelectedServices() {
+            return Array.from(document.querySelectorAll('#serviceChecklist .svc-check:checked')).map(c => c.value);
+        }
+
+        function updateSvcCount() {
+            const n = getSelectedServices().length;
+            const el = document.getElementById('svcCount');
+            if (el) el.textContent = n ? `(${n} selected)` : '';
+        }
+
+        function selectAllServices(state) {
+            document.querySelectorAll('#serviceChecklist .svc-check').forEach(c => { c.checked = state; });
+            onServiceSelectionChange();
+        }
+
+        async function onServiceSelectionChange() {
+            updateSvcCount();
+            await loadEnvs();
+        }
+
         async function loadEnvs() {
-            // Reset containers
             document.getElementById('sourceTiers').innerHTML = '';
             document.getElementById('targetTiers').innerHTML = '';
-            
+            if (getSelectedServices().length === 0) return;
             await addTier('sourceTiers', '');
             await addTier('targetTiers', '');
         }
 
         async function addTier(containerId, parentPath) {
-            const service = document.getElementById('serviceSelect').value;
+            // Env folders are shared across services; browse using the first selected one.
+            const service = getSelectedServices()[0];
+            if (!service) return;
             const branch = document.getElementById('sourceBranch').value;
             const res = await fetch(`/repo/${currentRepo}/envs?service=${service}&branch=${branch}&sub_path=${parentPath}`);
             const items = await res.json();
-            
+
             if (items.length === 0) return;
 
             const select = document.createElement('select');
             select.className = 'tier-select';
             select.style = "width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none; margin-bottom: 0.5rem;";
-            
+
             let options = '<option value="">-- select --</option>';
             options += items.map(item => `<option value="${item.name}" data-folder="${item.is_folder}" data-env="${item.is_env}">${item.name}${item.is_folder ? ' >' : ''}</option>`).join('');
             select.innerHTML = options;
@@ -344,7 +522,6 @@
             container.appendChild(select);
 
             select.onchange = async () => {
-                // Remove all subsequent tiers
                 while (select.nextSibling) {
                     container.removeChild(select.nextSibling);
                 }
@@ -353,18 +530,15 @@
                 if (!selectedOption.value) return;
 
                 const isFolder = selectedOption.getAttribute('data-folder') === 'true';
-                const isEnv = selectedOption.getAttribute('data-env') === 'true';
                 const newPath = parentPath ? `${parentPath}/${selectedOption.value}` : selectedOption.value;
 
                 if (isFolder) {
                     await addTier(containerId, newPath);
                 }
-                
-                // Show scan action if at least one side is an env (or just show it always if we have values)
+
                 document.getElementById('scanAction').style.display = 'block';
             };
-            
-            // Auto-select if only one option (excluding placeholder)
+
             if (items.length === 1) {
                 select.value = items[0].name;
                 select.onchange();
@@ -374,12 +548,242 @@
         function getFullEnvPath(containerId) {
             const selects = document.getElementById(containerId).querySelectorAll('.tier-select');
             const paths = [];
-            selects.forEach(s => {
-                if (s.value) paths.push(s.value);
-            });
+            selects.forEach(s => { if (s.value) paths.push(s.value); });
             return paths.join('/');
         }
 
+        // =========================================================
+        // DUAL-REPO MODE
+        // =========================================================
+        async function cloneDual(side) {
+            const url = document.getElementById(`dualRepoUrl${side}`).value.trim();
+            const statusEl = document.getElementById(`dualRepoStatus${side}`);
+            if (!url) return alert(`Please enter Repository ${side} URL`);
+
+            statusEl.textContent = 'Cloning…';
+            statusEl.classList.remove('ok');
+
+            const res = await fetch('/repo/clone?repo_url=' + encodeURIComponent(url), { method: 'POST' });
+            const data = await res.json();
+
+            if (data.status !== 'success') {
+                statusEl.textContent = 'Clone failed: ' + (data.detail || 'unknown error');
+                return;
+            }
+
+            dualRepos[side] = data.repo_name;
+            dualServiceLists[side] = data.services || [];
+            statusEl.textContent = `Cloned as "${data.repo_name}" — ${data.services.length} service folder(s) found.`;
+            statusEl.classList.add('ok');
+
+            const branchSel  = document.getElementById(`dualBranch${side}`);
+            branchSel.innerHTML  = data.branches.map(b => `<option value="${b}">${b}</option>`).join('');
+            if (data.default_branch) branchSel.value = data.default_branch;
+
+            document.getElementById(`dualPickers${side}`).style.display = 'block';
+
+            // Once both repos are cloned, reveal the pair builder and seed one row.
+            if (dualRepos.A && dualRepos.B) {
+                document.getElementById('servicePairsSection').style.display = 'block';
+                refreshPairDropdownOptions();
+                if (getServicePairRows().length === 0) addServicePairRow();
+            }
+
+            await onPairChanged();
+        }
+
+        // ---- Dual-mode service pair builder ----
+        function serviceOptionsHtml(list) {
+            return '<option value="">-- select --</option>' +
+                list.map(s => `<option value="${s}">${s}</option>`).join('');
+        }
+
+        function addServicePairRow() {
+            const list = document.getElementById('servicePairsList');
+            const row = document.createElement('div');
+            row.className = 'service-pair-row';
+            row.style = "display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;";
+            row.innerHTML = `
+                <select class="pair-base" onchange="onPairChanged()" style="flex: 1; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;">${serviceOptionsHtml(dualServiceLists.A)}</select>
+                <span style="color: var(--text-dim);">&harr;</span>
+                <select class="pair-target" onchange="onPairChanged()" style="flex: 1; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none;">${serviceOptionsHtml(dualServiceLists.B)}</select>
+                <button title="Remove pair" onclick="this.closest('.service-pair-row').remove(); onPairChanged();" style="background: #334155; color: var(--text-dim); padding: 0.4rem 0.7rem;">&times;</button>
+            `;
+            list.appendChild(row);
+        }
+
+        function refreshPairDropdownOptions() {
+            // Repopulate any existing rows once both service lists are known,
+            // preserving current selections.
+            getServicePairRows().forEach(row => {
+                const baseSel = row.querySelector('.pair-base');
+                const tgtSel = row.querySelector('.pair-target');
+                const bVal = baseSel.value, tVal = tgtSel.value;
+                baseSel.innerHTML = serviceOptionsHtml(dualServiceLists.A);
+                tgtSel.innerHTML = serviceOptionsHtml(dualServiceLists.B);
+                baseSel.value = bVal;
+                tgtSel.value = tVal;
+            });
+        }
+
+        function getServicePairRows() {
+            return Array.from(document.querySelectorAll('#servicePairsList .service-pair-row'));
+        }
+
+        function getServicePairs() {
+            return getServicePairRows()
+                .map(r => ({ base: r.querySelector('.pair-base').value, target: r.querySelector('.pair-target').value }))
+                .filter(p => p.base && p.target);
+        }
+
+        function firstPairService(side) {
+            const rows = getServicePairRows();
+            if (rows.length === 0) return '';
+            const sel = rows[0].querySelector(side === 'A' ? '.pair-base' : '.pair-target');
+            return sel ? sel.value : '';
+        }
+
+        async function onPairChanged() {
+            // Env folders are shared across services, so browse using the first
+            // pair's service on each side. Only (re)load if not already populated,
+            // to avoid wiping a user's env selection.
+            for (const side of ['A', 'B']) {
+                const container = document.getElementById(`dualEnvTiers${side}`);
+                if (firstPairService(side) && container && container.children.length === 0) {
+                    await loadDualEnvs(side);
+                }
+            }
+            maybeShowDualScanButton();
+        }
+
+        async function loadDualEnvs(side) {
+            const container = document.getElementById(`dualEnvTiers${side}`);
+            container.innerHTML = '';
+            await addDualTier(side, '');
+        }
+
+        async function addDualTier(side, parentPath) {
+            const repo    = dualRepos[side];
+            const service = firstPairService(side);
+            const branch  = document.getElementById(`dualBranch${side}`).value;
+            if (!repo || !service || !branch) return;
+
+            const res = await fetch(`/repo/${repo}/envs?service=${encodeURIComponent(service)}&branch=${encodeURIComponent(branch)}&sub_path=${encodeURIComponent(parentPath)}`);
+            const items = await res.json();
+            if (items.length === 0) return;
+
+            const container = document.getElementById(`dualEnvTiers${side}`);
+            const select = document.createElement('select');
+            select.className = 'tier-select';
+            select.style = "width: 100%; padding: 0.5rem; border-radius: 4px; background: #334155; color: white; border: none; margin-bottom: 0.5rem;";
+
+            let options = '<option value="">-- select --</option>';
+            options += items.map(i => `<option value="${i.name}" data-folder="${i.is_folder}" data-env="${i.is_env}">${i.name}${i.is_folder ? ' >' : ''}</option>`).join('');
+            select.innerHTML = options;
+            container.appendChild(select);
+
+            select.onchange = async () => {
+                while (select.nextSibling) container.removeChild(select.nextSibling);
+                const opt = select.options[select.selectedIndex];
+                if (!opt.value) { maybeShowDualScanButton(); return; }
+                const isFolder = opt.getAttribute('data-folder') === 'true';
+                const newPath = parentPath ? `${parentPath}/${opt.value}` : opt.value;
+                if (isFolder) await addDualTier(side, newPath);
+                maybeShowDualScanButton();
+            };
+
+            if (items.length === 1) {
+                select.value = items[0].name;
+                select.onchange();
+            }
+        }
+
+        function getDualEnvPath(side) {
+            const selects = document.getElementById(`dualEnvTiers${side}`).querySelectorAll('.tier-select');
+            const parts = [];
+            selects.forEach(s => { if (s.value) parts.push(s.value); });
+            return parts.join('/');
+        }
+
+        function maybeShowDualScanButton() {
+            const ok = dualRepos.A && dualRepos.B
+                && getServicePairs().length > 0
+                && getDualEnvPath('A') && getDualEnvPath('B');
+            document.getElementById('scanAction').style.display = ok ? 'block' : 'none';
+        }
+
+        // =========================================================
+        // Scan dispatch
+        // =========================================================
+        async function runScan() {
+            let url;
+
+            if (mode === 'single') {
+                const sourceEnv = getFullEnvPath('sourceTiers');
+                const targetEnv = getFullEnvPath('targetTiers');
+                const services = getSelectedServices();
+                const branch  = document.getElementById('sourceBranch').value;
+
+                if (services.length === 0) return alert('Please select at least one service');
+                if (!sourceEnv || !targetEnv) return alert('Please select both environments fully');
+
+                url = '/scan?' + new URLSearchParams({
+                    repo_name: currentRepo,
+                    services: services.join(','),
+                    baseline_env: sourceEnv,
+                    target_env: targetEnv,
+                    baseline_branch: branch,
+                }).toString();
+            } else {
+                const baselineEnv = getDualEnvPath('A');
+                const targetEnv   = getDualEnvPath('B');
+                const baselineBranch  = document.getElementById('dualBranchA').value;
+                const targetBranch    = document.getElementById('dualBranchB').value;
+                const pairs = getServicePairs();
+
+                if (!dualRepos.A || !dualRepos.B) return alert('Please clone both repositories first');
+                if (pairs.length === 0) return alert('Please add at least one complete service pair');
+                if (!baselineEnv || !targetEnv)  return alert('Please select an environment on both sides');
+
+                url = '/scan/dual?' + new URLSearchParams({
+                    baseline_repo: dualRepos.A,
+                    target_repo:   dualRepos.B,
+                    baseline_services: pairs.map(p => p.base).join(','),
+                    target_services:   pairs.map(p => p.target).join(','),
+                    baseline_env: baselineEnv,
+                    target_env:   targetEnv,
+                    baseline_branch: baselineBranch,
+                    target_branch:   targetBranch,
+                }).toString();
+            }
+
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.status !== 'success') {
+                alert('Scan failed: ' + (data.detail || 'unknown error'));
+                return;
+            }
+
+            const modeTag = data.mode === 'dual' ? ' [dual-repo]' : '';
+            document.getElementById('scanStatus').innerText =
+                `Scan ID: ${data.scan_id}${modeTag} — Found ${data.drifts_found} drifts`;
+            loadMatrix(data.scan_id);
+            window.currentScanId = data.scan_id;
+            document.getElementById('fixAllBtn').style.display = 'block';
+            document.getElementById('fixAllMrBtn').style.display = 'block';
+            document.getElementById('backupToggleLabel').style.display = 'inline-flex';
+            await loadDetails(data.drifts);
+        }
+
+        function shouldCreateBackup() {
+            const el = document.getElementById('createBackupToggle');
+            // Default to true if the toggle hasn't been rendered yet.
+            return el ? el.checked : true;
+        }
+
+        // =========================================================
+        // Matrix / details / remediation (mode-agnostic)
+        // =========================================================
         async function loadMatrix(scanId = null) {
             const url = scanId ? `/matrix?scan_id=${scanId}` : '/matrix';
             const res = await fetch(url);
@@ -403,41 +807,42 @@
         }
 
         async function loadDetails(data) {
-            console.log("Loading details with data:", data);
             if (!data) {
                 const res = await fetch('/results');
                 data = await res.json();
-                console.log("Fetched results from server:", data);
             }
-
-            window.allResults = data; // Store full dataset
+            window.allResults = data;
             populateTypeFilter(data);
-            applyFilters(); // Render initially
+            populateServiceFilter(data);
+            applyFilters();
         }
 
         function populateTypeFilter(data) {
             const typeFilter = document.getElementById('typeFilter');
             const types = [...new Set(data.map(d => d.diff_type))].sort();
-            
-            // Keep "All Types" and add others
-            typeFilter.innerHTML = '<option value="ALL">All Types</option>' + 
+            typeFilter.innerHTML = '<option value="ALL">All Types</option>' +
                 types.map(t => `<option value="${t}">${t.replace(/_/g, ' ')}</option>`).join('');
+        }
+
+        function populateServiceFilter(data) {
+            const svcFilter = document.getElementById('serviceFilter');
+            const prev = svcFilter.value;
+            const services = [...new Set(data.map(d => d.service))].sort();
+            svcFilter.innerHTML = '<option value="ALL">All Services</option>' +
+                services.map(s => `<option value="${s}">${s}</option>`).join('');
+            // Preserve prior selection if still valid.
+            if (prev && [...svcFilter.options].some(o => o.value === prev)) svcFilter.value = prev;
         }
 
         function applyFilters() {
             const typeValue = document.getElementById('typeFilter').value;
             const severityValue = document.getElementById('severityFilter').value;
+            const serviceValue = document.getElementById('serviceFilter').value;
 
             let filtered = window.allResults || [];
-
-            if (typeValue !== 'ALL') {
-                filtered = filtered.filter(d => d.diff_type === typeValue);
-            }
-
-            if (severityValue !== 'ALL') {
-                filtered = filtered.filter(d => d.severity === severityValue);
-            }
-
+            if (serviceValue !== 'ALL') filtered = filtered.filter(d => d.service === serviceValue);
+            if (typeValue !== 'ALL') filtered = filtered.filter(d => d.diff_type === typeValue);
+            if (severityValue !== 'ALL') filtered = filtered.filter(d => d.severity === severityValue);
             renderTable(filtered);
         }
 
@@ -446,7 +851,7 @@
             tbody.innerHTML = '';
 
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-dim)">No matching drifts found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-dim)">No matching drifts found</td></tr>';
                 document.getElementById('downloadBtn').style.display = 'none';
                 return;
             }
@@ -465,45 +870,19 @@
                         <td>${row.diff_type}</td>
                         <td><span class="badge badge-${row.severity}">${row.severity}</span></td>
                         <td>
-                            ${row.diff_type === 'MISSING_KEY' ? 
+                            ${row.diff_type === 'MISSING_KEY' ?
                                 `<div style="display:flex; gap:0.25rem;">
                                     <button onclick="applyRemediation(${row.id}, false)" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; background: var(--info); width: auto;">Fix Loc</button>
                                     <button onclick="applyRemediation(${row.id}, true)" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; background: var(--warning); width: auto;">Fix & MR</button>
-                                 </div>` : 
-                                ''}
+                                 </div>` : ''}
                         </td>
                     </tr>
                 `;
             });
-            window.currentViewResults = data; // Store for CSV export
+            window.currentViewResults = data;
         }
 
-        async function runScan() {
-            const sourceEnv = getFullEnvPath('sourceTiers');
-            const targetEnv = getFullEnvPath('targetTiers');
-            const service = document.getElementById('serviceSelect').value;
-            const branch = document.getElementById('sourceBranch').value;
-
-            if (!sourceEnv || !targetEnv) return alert('Please select both environments fully');
-
-            const params = new URLSearchParams({
-                repo_name: currentRepo,
-                service: service,
-                baseline_env: sourceEnv,
-                target_env: targetEnv,
-                baseline_branch: branch
-            });
-
-            const res = await fetch('/scan?' + params.toString());
-            const data = await res.json();
-
-            document.getElementById('scanStatus').innerText = `Scan ID: ${data.scan_id} - Found ${data.drifts_found} drifts`;
-            loadMatrix(data.scan_id);
-            window.currentScanId = data.scan_id;
-            document.getElementById('fixAllBtn').style.display = 'block';
-            document.getElementById('fixAllMrBtn').style.display = 'block';
-            await loadDetails(data.drifts);
-        }
+        async function runRescan() { runScan(); }
 
         function downloadCSV() {
             const dataToExport = window.currentViewResults || [];
@@ -530,16 +909,24 @@
         }
 
         async function applyRemediation(recordId, createMr) {
+            const createBackup = shouldCreateBackup();
             const mrMsg = createMr ? " AND create a GitLab Merge Request" : "";
-            if (!confirm(`Are you sure you want to add this missing key${mrMsg}? A backup will be created and environment-specific values will be translated automagically.`)) return;
-            
+            const backupMsg = createBackup
+                ? " A backup file will be created next to the target."
+                : " No backup file will be created.";
+            if (!confirm(`Are you sure you want to add this missing key${mrMsg}?${backupMsg} Environment-specific values will be translated automagically.`)) return;
+
             try {
-                const res = await fetch(`/remediate?record_id=${recordId}&create_mr=${createMr}`, { method: 'POST' });
+                const params = new URLSearchParams({
+                    record_id: recordId,
+                    create_mr: createMr,
+                    create_backup: createBackup,
+                });
+                const res = await fetch(`/remediate?${params.toString()}`, { method: 'POST' });
                 const data = await res.json();
-                
+
                 if (data.status === 'success') {
                     alert('Success: ' + data.message);
-                    // Optionally rerun scan to update view
                     runScan();
                 } else {
                     alert('Error: ' + data.detail);
@@ -551,13 +938,20 @@
 
         async function applyBulkRemediation(createMr) {
             if (!window.currentScanId) return;
+            const createBackup = shouldCreateBackup();
             const mrMsg = createMr ? " Afterwards, a GitLab Merge Request will be opened automatically." : "";
-            if (!confirm(`This will attempt to fix ALL missing keys in this scan.${mrMsg} Continue?`)) return;
+            const backupMsg = createBackup ? "" : " Backup files will NOT be created.";
+            if (!confirm(`This will attempt to fix ALL missing keys in this scan.${mrMsg}${backupMsg} Continue?`)) return;
 
             try {
-                const res = await fetch(`/remediate/bulk?scan_id=${window.currentScanId}&create_mr=${createMr}`, { method: 'POST' });
+                const params = new URLSearchParams({
+                    scan_id: window.currentScanId,
+                    create_mr: createMr,
+                    create_backup: createBackup,
+                });
+                const res = await fetch(`/remediate/bulk?${params.toString()}`, { method: 'POST' });
                 const data = await res.json();
-                
+
                 if (data.status === 'success') {
                     alert(`Success: ${data.message}`);
                     runScan();
@@ -568,11 +962,6 @@
                 alert('Bulk remediation failed: ' + e);
             }
         }
-
-
-        // Removed auto-load for a cleaner start
-        // loadMatrix();
-        // loadDetails();
     </script>
 </body>
 

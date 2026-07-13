@@ -86,31 +86,37 @@ class GitManager:
             return None
         return result.stdout
 
-    def push_with_mr(self, repo_path: str, files: list) -> str:
-        """Commits changes and creates a GitLab Merge Request."""
+    def push_with_mr(self, repo_path: str, files: list, include_backups: bool = True) -> str:
+        """Commits changes and creates a GitLab Merge Request.
+
+        When `include_backups` is False, any `<name>_backup*.<ext>` files that
+        happen to sit next to the modified files are NOT staged into the commit
+        and are NOT restored back onto master after the push. Use this when the
+        caller asked for a backup-free remediation.
+        """
         import time
         branch_name = f"driftguard-fix-{int(time.time())}"
-        
-        logger.info(f"Creating new branch {branch_name} in {repo_path}")
-        
+
+        logger.info(f"Creating new branch {branch_name} in {repo_path} (include_backups={include_backups})")
+
         # Ensure we are fully up to date and not on a detached HEAD before branching
         # (Assuming we are generally on 'master' or main here)
-        
+
         # 1. Create and checkout new branch
         subprocess.run(["git", "-C", repo_path, "checkout", "-b", branch_name], check=True, capture_output=True)
-        
+
         # 2. Add modified files
         for f in files:
             abs_f = os.path.abspath(f)
             subprocess.run(["git", "-C", repo_path, "add", abs_f], check=True, capture_output=True)
 
-            # Also stage the backup if it exists / was changed
-            base, ext = os.path.splitext(abs_f)
-            # Find and add any backups
-            for file in os.listdir(os.path.dirname(abs_f)):
-                if file.startswith(os.path.basename(base) + "_backup") and file.endswith(ext):
-                    backup_path = os.path.join(os.path.dirname(abs_f), file)
-                    subprocess.run(["git", "-C", repo_path, "add", backup_path], check=True, capture_output=True)
+            if include_backups:
+                # Also stage any sibling backup files (created during remediation)
+                base, ext = os.path.splitext(abs_f)
+                for file in os.listdir(os.path.dirname(abs_f)):
+                    if file.startswith(os.path.basename(base) + "_backup") and file.endswith(ext):
+                        backup_path = os.path.join(os.path.dirname(abs_f), file)
+                        subprocess.run(["git", "-C", repo_path, "add", backup_path], check=True, capture_output=True)
 
         # 3. Commit
         commit_msg = "DriftGuard: Automated configuration remediation"
@@ -165,13 +171,13 @@ class GitManager:
             if res.returncode != 0:
                 logger.error(f"Failed to restore {rel_f}: {res.stderr}")
                     
-            # Bring any related surgical backups
-            base, ext = os.path.splitext(f)
-            # Find and add any backups
-            for file in os.listdir(os.path.dirname(os.path.abspath(f))):
-                if file.startswith(os.path.basename(base) + "_backup") and file.endswith(ext):
-                    backup_rel = os.path.relpath(os.path.join(os.path.dirname(os.path.abspath(f)), file), repo_path)
-                    subprocess.run(["git", "-C", repo_path, "checkout", branch_name, "--", backup_rel], capture_output=True)
+            if include_backups:
+                # Bring any related surgical backups back into master's working tree
+                base, ext = os.path.splitext(f)
+                for file in os.listdir(os.path.dirname(os.path.abspath(f))):
+                    if file.startswith(os.path.basename(base) + "_backup") and file.endswith(ext):
+                        backup_rel = os.path.relpath(os.path.join(os.path.dirname(os.path.abspath(f)), file), repo_path)
+                        subprocess.run(["git", "-C", repo_path, "checkout", branch_name, "--", backup_rel], capture_output=True)
                     
         # Unstage them so they don't break the scanner or next branching operations
         subprocess.run(["git", "-C", repo_path, "reset"], capture_output=True)

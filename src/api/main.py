@@ -44,6 +44,25 @@ def sanitize_for_db(value):
     # Replace surrogate pairs and other invalid UTF-8
     return s.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
 
+
+def resolve_repo_path(repo_name: str) -> str:
+    """`mock_repo` lives at the project root; every other repo lives under data/repos/."""
+    return "mock_repo" if repo_name == "mock_repo" else os.path.join("data/repos", repo_name)
+
+
+def _split_csv(value: Optional[str]) -> List[str]:
+    """Parse a comma-separated query param into a clean list, dropping blanks/dupes (order-preserving)."""
+    if not value:
+        return []
+    seen = set()
+    out = []
+    for item in value.split(","):
+        item = item.strip()
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
 app = FastAPI(
     title="DriftGuard API",
     root_path="/driftguard",
@@ -155,15 +174,16 @@ A **service** is any top-level non-hidden folder inside the repo root (e.g. `pos
 )
 def get_services(repo_name: str, branch: Optional[str] = None):
     logger.info(f"Request: GET /repo/{repo_name}/services | branch={branch}")
-    repo_path = os.path.join("data/repos", repo_name)
+    repo_path = resolve_repo_path(repo_name)
     if not os.path.exists(repo_path):
         logger.warning(f"Repo not found: {repo_name}")
         raise HTTPException(status_code=404, detail="Repo not found")
-    
-    if not branch:
-        branch = git_manager.get_default_branch(repo_path)
-    
-    git_manager.checkout(repo_path, branch)
+
+    if repo_name != "mock_repo":
+        if not branch:
+            branch = git_manager.get_default_branch(repo_path)
+        git_manager.checkout(repo_path, branch)
+
     scanner = RepoScanner()
     services = scanner.get_services(repo_path)
     return services
@@ -184,11 +204,12 @@ Each item in the response indicates:
     """
 )
 async def get_envs(repo_name: str, service: str, branch: str, sub_path: str = ""):
-    repo_path = os.path.join("data/repos", repo_name)
+    repo_path = resolve_repo_path(repo_name)
     if not os.path.exists(repo_path):
         raise HTTPException(status_code=404, detail="Repo not found")
-    
-    git_manager.checkout(repo_path, branch)
+
+    if repo_name != "mock_repo":
+        git_manager.checkout(repo_path, branch)
     return RepoScanner.get_environments(repo_path, service, sub_path)
 
 
@@ -214,6 +235,10 @@ Each drift is assigned a **severity**:
 Results are persisted to the database and returned with a `scan_id` for later retrieval and remediation.
 
 > **Tip:** Use `baseline_branch` to compare across Git branches in addition to environment folders.
+
+> **Multi-service:** Pass `services=svc1,svc2,svc3` to scan several services in one run
+> (all sharing the same baseline/target env). The single `service` param is still
+> supported for one-service scans.
     """
 )
 def run_scan(
@@ -221,32 +246,88 @@ def run_scan(
     service: str = "service-A",
     baseline_env: str = "s0",
     target_env: str = "s1",
-    baseline_branch: Optional[str] = None
+    baseline_branch: Optional[str] = None,
+    services: Optional[str] = None,
 ):
-    logger.info(f"Request: GET /scan | repo={repo_name} | service={service} | baseline={baseline_env} | target={target_env} | branch={baseline_branch}")
-    repo_path = os.path.join("data/repos", repo_name) if repo_name != "mock_repo" else "mock_repo"
-    
+    svc_list = _split_csv(services) or ([service] if service else [])
+    logger.info(f"Request: GET /scan | repo={repo_name} | services={svc_list} | baseline={baseline_env} | target={target_env} | branch={baseline_branch}")
+
+    if not svc_list:
+        raise HTTPException(status_code=400, detail="No service(s) specified")
+
+    repo_path = resolve_repo_path(repo_name)
+
     if not os.path.exists(repo_path):
         logger.warning(f"Scan failed: Repo not found: {repo_path}")
         raise HTTPException(status_code=404, detail="Repo not found")
-    
+
     rule_manager = RuleManager("config/rules.yaml")
     drift_engine = DriftEngine(rule_manager)
-    
+
     if baseline_branch:
         git_manager.checkout(repo_path, baseline_branch)
-    
-    diffs = drift_engine.compare_environments(repo_path, service, baseline_env, target_env)
-    score = drift_engine.calculate_drift_score(diffs)
-    
+
+    all_diffs = []
+    for svc in svc_list:
+        all_diffs.extend(drift_engine.compare_environments(repo_path, svc, baseline_env, target_env))
+    score = drift_engine.calculate_drift_score(all_diffs)
+
+    services_csv = ",".join(svc_list)
+    return _persist_scan(
+        diffs=all_diffs,
+        score=score,
+        mode="single",
+        repo_name=repo_name,
+        baseline_repo=repo_name,
+        target_repo=repo_name,
+        baseline_service=services_csv,
+        target_service=services_csv,
+        baseline_env=baseline_env,
+        target_env=target_env,
+        baseline_branch=baseline_branch,
+        target_branch=baseline_branch,
+        total_services=len(svc_list),
+    )
+
+
+def _persist_scan(
+    *,
+    diffs,
+    score: int,
+    mode: str,
+    repo_name: str,
+    baseline_repo: str,
+    target_repo: str,
+    baseline_service: str,
+    target_service: str,
+    baseline_env: str,
+    target_env: str,
+    baseline_branch: Optional[str],
+    target_branch: Optional[str],
+    total_services: int = 1,
+):
+    """Shared persistence path for both single- and dual-repo scans.
+
+    For multi-service scans, `baseline_service` / `target_service` are the
+    comma-joined display strings for the whole run; exact per-drift attribution
+    lives on each DriftRecord (`service` = target service, `baseline_service` =
+    baseline service), which the engine tags per service.
+    """
     with Session(engine) as session:
         history = ScanHistory(
             repo_name=repo_name,
             baseline_env=baseline_env,
             target_env=target_env,
-            total_services=1,
+            total_services=total_services,
             total_drifts=len(diffs),
-            critical_drifts=sum(1 for d in diffs if d.severity == "CRITICAL")
+            critical_drifts=sum(1 for d in diffs if d.severity == "CRITICAL"),
+            mode=mode,
+            baseline_repo=baseline_repo,
+            target_repo=target_repo,
+            baseline_branch=baseline_branch,
+            target_branch=target_branch,
+            baseline_service=baseline_service,
+            target_service=target_service,
         )
         session.add(history)
         session.commit()
@@ -256,22 +337,23 @@ def run_scan(
         for d in diffs:
             record = DriftRecord(
                 scan_id=history.id,
-                service=d.service,
+                service=d.service,  # engine sets this to the TARGET service in dual mode
+                # Prefer the per-diff baseline service (correct for multi-service
+                # scans); fall back to the scan-level value for older diffs.
+                baseline_service=getattr(d, "baseline_service", None) or baseline_service,
                 env=d.env,
                 file=d.file,
                 key=d.key,
-                # base_value=str(d.base_value) if d.base_value is not None else None,
-                # target_value=str(d.target_value) if d.target_value is not None else None,
                 base_value=sanitize_for_db(d.base_value),
                 target_value=sanitize_for_db(d.target_value),
                 value_type=d.value_type,
                 diff_type=d.diff_type,
                 severity=d.severity,
-                drift_score=score
+                drift_score=score,
             )
             session.add(record)
             all_diffs.append(record)
-        
+
         session.commit()
         drifts_list = []
         for d in all_diffs:
@@ -280,6 +362,7 @@ def run_scan(
                 "id": d.id,
                 "timestamp": d.timestamp.isoformat() if d.timestamp else None,
                 "service": d.service,
+                "baseline_service": d.baseline_service,
                 "env": d.env,
                 "file": d.file,
                 "key": d.key,
@@ -287,12 +370,136 @@ def run_scan(
                 "target_value": d.target_value,
                 "diff_type": d.diff_type,
                 "severity": d.severity,
-                "drift_score": d.drift_score
+                "drift_score": d.drift_score,
             })
         scan_id = history.id
-    
-    logger.info(f"Success: GET /scan | scan_id={scan_id} | drifts_found={len(drifts_list)}")
-    return {"status": "success", "scan_id": scan_id, "drifts_found": len(drifts_list), "drifts": drifts_list}
+
+    logger.info(f"Success: scan | mode={mode} | scan_id={scan_id} | drifts_found={len(drifts_list)}")
+    return {
+        "status": "success",
+        "scan_id": scan_id,
+        "mode": mode,
+        "drifts_found": len(drifts_list),
+        "drifts": drifts_list,
+    }
+
+
+@app.get(
+    "/scan/dual",
+    tags=["Scanning"],
+    summary="Run a Dual-Repo Drift Scan",
+    description="""
+Compares configuration files between **two different cloned repositories**.
+
+Use this when the baseline and target live in **separate repos** (e.g. a shared
+config repo vs a service-specific repo, or a legacy vs modern deployment).
+
+You choose:
+- `baseline_repo` + `baseline_service` + `baseline_env` (+ optional `baseline_branch`)
+- `target_repo`   + `target_service`   + `target_env`   (+ optional `target_branch`)
+
+Both repos must already be cloned via `POST /repo/clone`. Service folder names
+can differ between the two repos — this endpoint does no auto-matching, it
+compares exactly the two folders you point it at.
+
+Remediation (via the standard `/remediate` and `/remediate/bulk` endpoints)
+only ever writes to the **target** repo. The baseline repo is treated as
+read-only.
+
+**Multi-service:** Pass `baseline_services=a,b,c` and `target_services=x,y,z`
+(index-aligned, same length) to compare several service pairs in one run. The
+scalar `baseline_service`/`target_service` params are still supported for a
+single pair.
+    """,
+)
+def run_scan_dual(
+    baseline_repo: str,
+    target_repo: str,
+    baseline_env: str,
+    target_env: str,
+    baseline_service: Optional[str] = None,
+    target_service: Optional[str] = None,
+    baseline_services: Optional[str] = None,
+    target_services: Optional[str] = None,
+    baseline_branch: Optional[str] = None,
+    target_branch: Optional[str] = None,
+):
+    # Build the list of (baseline_service, target_service) pairs.
+    base_list = _split_csv(baseline_services) or ([baseline_service] if baseline_service else [])
+    tgt_list = _split_csv(target_services) or ([target_service] if target_service else [])
+
+    if not base_list or not tgt_list:
+        raise HTTPException(status_code=400, detail="No service pair(s) specified")
+    if len(base_list) != len(tgt_list):
+        raise HTTPException(
+            status_code=400,
+            detail=f"baseline_services ({len(base_list)}) and target_services ({len(tgt_list)}) must have the same length",
+        )
+
+    pairs = list(zip(base_list, tgt_list))
+    logger.info(
+        f"Request: GET /scan/dual | "
+        f"baseline={baseline_repo}:{baseline_branch} | target={target_repo}:{target_branch} | pairs={pairs}"
+    )
+
+    baseline_repo_path = resolve_repo_path(baseline_repo)
+    target_repo_path = resolve_repo_path(target_repo)
+
+    if not os.path.exists(baseline_repo_path):
+        raise HTTPException(status_code=404, detail=f"Baseline repo not found: {baseline_repo}")
+    if not os.path.exists(target_repo_path):
+        raise HTTPException(status_code=404, detail=f"Target repo not found: {target_repo}")
+
+    # Check out the requested branch on each repo independently so we compare
+    # exactly what the user asked for. Skipped for the mock_repo (no git).
+    if baseline_branch and baseline_repo != "mock_repo":
+        git_manager.checkout(baseline_repo_path, baseline_branch)
+    if target_branch and target_repo != "mock_repo":
+        git_manager.checkout(target_repo_path, target_branch)
+
+    rule_manager = RuleManager("config/rules.yaml")
+    drift_engine = DriftEngine(rule_manager)
+
+    all_diffs = []
+    for base_svc, tgt_svc in pairs:
+        baseline_dir = DriftEngine.resolve_env_path(baseline_repo_path, base_svc, baseline_env)
+        target_dir = DriftEngine.resolve_env_path(target_repo_path, tgt_svc, target_env)
+
+        if not os.path.exists(baseline_dir):
+            raise HTTPException(status_code=404, detail=f"Baseline env directory not found: {baseline_dir}")
+        if not os.path.exists(target_dir):
+            raise HTTPException(status_code=404, detail=f"Target env directory not found: {target_dir}")
+
+        # `service_label` = target service (remediation writes there); env_label
+        # = target env; baseline_service_label records the baseline side per pair.
+        all_diffs.extend(drift_engine.compare_dirs(
+            baseline_dir, target_dir,
+            service_label=tgt_svc,
+            env_label=target_env,
+            baseline_service_label=base_svc,
+        ))
+
+    score = drift_engine.calculate_drift_score(all_diffs)
+
+    baseline_services_csv = ",".join(base_list)
+    target_services_csv = ",".join(tgt_list)
+    return _persist_scan(
+        diffs=all_diffs,
+        score=score,
+        mode="dual",
+        # `repo_name` keeps pointing at the TARGET repo so any legacy consumer
+        # (and the remediation path) resolves the correct write location.
+        repo_name=target_repo,
+        baseline_repo=baseline_repo,
+        target_repo=target_repo,
+        baseline_service=baseline_services_csv,
+        target_service=target_services_csv,
+        baseline_env=baseline_env,
+        target_env=target_env,
+        baseline_branch=baseline_branch,
+        target_branch=target_branch,
+        total_services=len(pairs),
+    )
 
 
 @app.get(
@@ -406,8 +613,8 @@ Set `create_mr=true` to automatically push the fix to a new Git branch and open 
 > **Note:** Only `MISSING_KEY` drift types are supported for auto-remediation.
     """
 )
-def remediate(record_id: int, create_mr: bool = False):
-    logger.info(f"Request: POST /remediate | record_id={record_id} | create_mr={create_mr}")
+def remediate(record_id: int, create_mr: bool = False, create_backup: bool = True):
+    logger.info(f"Request: POST /remediate | record_id={record_id} | create_mr={create_mr} | create_backup={create_backup}")
     with Session(engine) as session:
         record = session.get(DriftRecord, record_id)
         if not record:
@@ -437,54 +644,59 @@ def remediate(record_id: int, create_mr: bool = False):
             logger.info(f"Remediate: Transformed value for {record.key} ({history.baseline_env} -> {history.target_env})")
             logger.debug(f"Remediate: Original='{record.base_value}' -> Transformed='{final_value}'")
 
-        repo_name = history.repo_name
-        repo_path = os.path.join("data/repos", repo_name) if repo_name != "mock_repo" else "mock_repo"
-        logger.debug(f"Remediate: Base repo path is {repo_path}")
-        
-        service_path = os.path.join(repo_path, record.service)
-        logger.debug(f"Remediate: Checking service folder at {service_path}")
-        
-        env_path = os.path.join(service_path, "stage", record.env)
-        logger.debug(f"Remediate: Probing for 'stage' structure at {env_path}")
-        if not os.path.exists(env_path):
-            logger.debug(f"Remediate: 'stage' structure not found. Falling back to {record.env} root.")
-            env_path = os.path.join(service_path, record.env)
-            
-        target_file_path = os.path.join(env_path, record.file)
+        target_repo = history.target_repo or history.repo_name
+        target_repo_path = resolve_repo_path(target_repo)
+        # Per-record target service (correct for multi-service scans where
+        # history.target_service is a comma-joined display string).
+        target_service = record.service or history.target_service
+
+        baseline_repo = history.baseline_repo or history.repo_name
+        baseline_repo_path = resolve_repo_path(baseline_repo)
+        baseline_service = record.baseline_service or record.service or history.baseline_service
+
+        logger.debug(
+            f"Remediate: mode={history.mode} | "
+            f"target={target_repo}:{target_service}:{history.target_env} | "
+            f"baseline={baseline_repo}:{baseline_service}:{history.baseline_env}"
+        )
+
+        target_env_path = DriftEngine.resolve_env_path(target_repo_path, target_service, history.target_env)
+        target_file_path = os.path.join(target_env_path, record.file)
         logger.debug(f"Remediate: Final target file path resolved to {target_file_path}")
-        
+
         if not os.path.exists(target_file_path):
             logger.error(f"Remediate failed: Target file not found at {target_file_path}")
             return {"status": "error", "detail": f"Target file not found at {target_file_path}"}
 
-        baseline_env_path = os.path.join(service_path, "stage", history.baseline_env)
-        if not os.path.exists(baseline_env_path):
-            baseline_env_path = os.path.join(service_path, history.baseline_env)
+        baseline_env_path = DriftEngine.resolve_env_path(baseline_repo_path, baseline_service, history.baseline_env)
         baseline_file_path = os.path.join(baseline_env_path, record.file)
 
         remediator = ConfigRemediator()
         success = remediator.remediate_missing_key(
-            target_file_path, 
-            record.key, 
+            target_file_path,
+            record.key,
             final_value,
             baseline_file_path=baseline_file_path,
-            repo_path=repo_path,
-            git_manager=git_manager
+            repo_path=target_repo_path,
+            git_manager=git_manager,
+            create_backup=create_backup,
         )
-        
+
         if not success:
             logger.error(f"Remediate failed: ConfigRemediator returned failure for {target_file_path}")
             raise HTTPException(status_code=500, detail="Remediation failed. Check logs.")
-        
-        msg = f"Remediated {record.key} in {record.service}/{record.env}"
+
+        msg = f"Remediated {record.key} in {target_repo}/{target_service}/{history.target_env}"
+        if not create_backup:
+            msg += " (no backup file)"
         if create_mr:
             try:
-                branch = git_manager.push_with_mr(repo_path, [target_file_path])
+                branch = git_manager.push_with_mr(target_repo_path, [target_file_path], include_backups=create_backup)
                 msg += f" | MR Created on branch: {branch}"
             except Exception as e:
                 logger.error(f"MR Creation failed for individual fix: {e}")
                 msg += " | WARNING: Git Push failed. See logs."
-        
+
         logger.info(f"Success: POST /remediate | record_id={record_id} | path={target_file_path} | key={record.key}")
         return {"status": "success", "message": msg}
 
@@ -510,8 +722,8 @@ Set `create_mr=true` to batch all fixes into a **single GitLab Merge Request** a
 > **Tip:** Run `/scan` first to get a `scan_id`, then pass it here to fix everything at once.
     """
 )
-def remediate_bulk(scan_id: int, create_mr: bool = False):
-    logger.info(f"Request: POST /remediate/bulk | scan_id={scan_id} | create_mr={create_mr}")
+def remediate_bulk(scan_id: int, create_mr: bool = False, create_backup: bool = True):
+    logger.info(f"Request: POST /remediate/bulk | scan_id={scan_id} | create_mr={create_mr} | create_backup={create_backup}")
     with Session(engine) as session:
         history = session.get(ScanHistory, scan_id)
         if not history:
@@ -532,54 +744,62 @@ def remediate_bulk(scan_id: int, create_mr: bool = False):
         rule_manager = RuleManager("config/rules.yaml")
         results = []
         modified_files = set()
-        
-        repo_path = os.path.join("data/repos", history.repo_name) if history.repo_name != "mock_repo" else "mock_repo"
+
+        target_repo = history.target_repo or history.repo_name
+        target_repo_path = resolve_repo_path(target_repo)
+
+        baseline_repo = history.baseline_repo or history.repo_name
+        baseline_repo_path = resolve_repo_path(baseline_repo)
+        baseline_service_hist = history.baseline_service
 
         for record in records:
-            service_path = os.path.join(repo_path, record.service)
-            env_path = os.path.join(service_path, "stage", record.env)
-            if not os.path.exists(env_path):
-                env_path = os.path.join(service_path, record.env)
-            target_file_path = os.path.join(env_path, record.file)
-            
+            # Use per-record services. history.target_service / baseline_service
+            # may be comma-joined display strings for multi-service scans, so we
+            # rely on the exact per-drift attribution set by the engine.
+            tgt_svc = record.service or history.target_service
+            base_svc = record.baseline_service or record.service or baseline_service_hist
+
+            target_env_path = DriftEngine.resolve_env_path(target_repo_path, tgt_svc, history.target_env)
+            target_file_path = os.path.join(target_env_path, record.file)
+
             if not os.path.exists(target_file_path):
                 logger.error(f"Bulk Remediate: Skipping {record.key} (file not found: {target_file_path})")
                 results.append({"key": record.key, "success": False, "reason": "File not found"})
                 continue
-            
+
             final_value_str = rule_manager.transform_value(
-                record.key, 
-                record.base_value, 
-                history.target_env, 
-                history.baseline_env
+                record.key,
+                record.base_value,
+                history.target_env,
+                history.baseline_env,
             )
-            
             final_value = cast_value(final_value_str, record.value_type)
-            
-            baseline_env_path = os.path.join(service_path, "stage", history.baseline_env)
-            if not os.path.exists(baseline_env_path):
-                baseline_env_path = os.path.join(service_path, history.baseline_env)
+
+            baseline_env_path = DriftEngine.resolve_env_path(baseline_repo_path, base_svc, history.baseline_env)
             baseline_file_path = os.path.join(baseline_env_path, record.file)
 
             success = remediator.remediate_missing_key(
-                target_file_path, 
-                record.key, 
+                target_file_path,
+                record.key,
                 final_value,
                 baseline_file_path=baseline_file_path,
-                repo_path=repo_path,
-                git_manager=git_manager
+                repo_path=target_repo_path,
+                git_manager=git_manager,
+                create_backup=create_backup,
             )
             results.append({"key": record.key, "success": success})
             if success:
                 modified_files.add(target_file_path)
-            
+
         success_count = sum(1 for r in results if r['success'])
         logger.info(f"Bulk Remediate Success: {success_count}/{len(records)} keys remediated")
-        
-        msg = f"{success_count}/{len(records)} keys remediated."
+
+        msg = f"{success_count}/{len(records)} keys remediated in {target_repo}."
+        if not create_backup:
+            msg += " (no backup files)"
         if create_mr and modified_files:
             try:
-                branch = git_manager.push_with_mr(repo_path, list(modified_files))
+                branch = git_manager.push_with_mr(target_repo_path, list(modified_files), include_backups=create_backup)
                 msg += f" MR Created on branch: {branch}"
             except Exception as e:
                 logger.error(f"Bulk MR Creation failed: {e}")

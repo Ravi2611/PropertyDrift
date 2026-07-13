@@ -82,6 +82,37 @@
         .badge-WARNING { background: var(--warning); color: white; }
         .badge-INFO { background: var(--info); color: white; }
 
+        .badge-mode {
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+        .badge-mode-single { background: #334155; color: var(--text-main); }
+        .badge-mode-dual   { background: #b45309; color: white; }
+
+        .badge-svc {
+            display: inline-block;
+            padding: 0.05rem 0.4rem;
+            border-radius: 999px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            background: #1e40af;
+            color: white;
+            vertical-align: middle;
+        }
+
+        .scan-endpoint {
+            font-size: 0.8rem;
+            color: var(--text-main);
+        }
+        .scan-endpoint .sub {
+            color: var(--text-dim);
+            font-size: 0.72rem;
+        }
+
         button {
             background: var(--primary);
             color: var(--bg-color);
@@ -115,6 +146,9 @@
             <thead>
                 <tr>
                     <th>Timestamp</th>
+                    <th>Mode</th>
+                    <th>Baseline</th>
+                    <th>Target</th>
                     <th>Total Drifts</th>
                     <th>Critical</th>
                     <th>Action</th>
@@ -156,20 +190,56 @@
             tbody.innerHTML = '';
 
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-dim)">No history found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-dim)">No history found</td></tr>';
                 return;
             }
 
             data.forEach(scan => {
+                const scanMode = scan.mode || 'single';
+                const baselineRepo = scan.baseline_repo || scan.repo_name || '-';
+                const targetRepo   = scan.target_repo   || scan.repo_name || '-';
+                const baselineBranch  = scan.baseline_branch  ? ` @ ${scan.baseline_branch}` : '';
+                const targetBranch    = scan.target_branch    ? ` @ ${scan.target_branch}`   : '';
+                const totalServices   = scan.total_services || 1;
+
+                const svcBadge = totalServices > 1
+                    ? ` <span class="badge-svc" title="${totalServices} services in this scan">${totalServices} services</span>`
+                    : '';
+
+                const baselineCell = `
+                    <div class="scan-endpoint">
+                        <div>${baselineRepo}${baselineBranch}${svcBadge}</div>
+                        <div class="sub">${fmtServices(scan.baseline_service)}${scan.baseline_env}</div>
+                    </div>
+                `;
+                const targetCell = `
+                    <div class="scan-endpoint">
+                        <div>${targetRepo}${targetBranch}${svcBadge}</div>
+                        <div class="sub">${fmtServices(scan.target_service)}${scan.target_env}</div>
+                    </div>
+                `;
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${new Date(scan.timestamp).toLocaleString()}</td>
+                    <td><span class="badge-mode badge-mode-${scanMode}">${scanMode}</span></td>
+                    <td>${baselineCell}</td>
+                    <td>${targetCell}</td>
                     <td>${scan.total_drifts}</td>
                     <td><span class="badge ${scan.critical_drifts > 0 ? 'badge-CRITICAL' : 'badge-INFO'}">${scan.critical_drifts}</span></td>
                     <td><button onclick="viewDetails(${scan.id})" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">View Details</button></td>
                 `;
                 tbody.appendChild(row);
             });
+        }
+
+        // Render a services string, truncating long multi-service lists with a tooltip.
+        function fmtServices(services) {
+            if (!services) return '';
+            const list = services.split(',').map(s => s.trim()).filter(Boolean);
+            if (list.length <= 1) return services ? services + ' · ' : '';
+            const shown = list.length > 2 ? `${list.slice(0, 2).join(', ')} +${list.length - 2}` : list.join(', ');
+            return `<span title="${services}">${shown}</span> · `;
         }
 
         async function viewDetails(scanId) {

@@ -6,6 +6,7 @@ ignore_keys:
 env_aware_keys:
   - "db.url"
   - "db.password"
+  - ""
 
 ignore_patterns:
   - ".*timestamp.*"

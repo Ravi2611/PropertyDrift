@@ -1,6 +1,8 @@
 import subprocess
 import os
+import re
 import shutil
+from urllib.parse import urlsplit, urlunsplit, quote
 from src.core.logger import setup_logger
 
 logger = setup_logger("Git")
@@ -15,16 +17,111 @@ class GitManager:
         repo_name = repo_url.split("/")[-1].replace(".git", "")
         return os.path.join(self.base_dir, repo_name)
 
+    def _require_credentials(self):
+        """Returns (user, token, domain) or raises if credentials are missing.
+
+        Every network git operation (clone/fetch/pull/push) goes through here,
+        so DriftGuard will refuse to talk to a remote without configured creds
+        instead of silently falling back to ambient/cached git auth.
+        """
+        git_user = os.environ.get("GIT_USERNAME")
+        git_token = os.environ.get("GIT_TOKEN")
+        git_domain = os.environ.get("GIT_DOMAIN", "gitlab.dominosindia.in")
+        missing = [
+            name for name, val in (
+                ("GIT_USERNAME", git_user),
+                ("GIT_TOKEN", git_token),
+                ("GIT_DOMAIN", git_domain),
+            ) if not val
+        ]
+        if missing:
+            raise RuntimeError(
+                "Missing required Git credentials: "
+                + ", ".join(missing)
+                + ". Set them in your .env (GIT_USERNAME, GIT_TOKEN, GIT_DOMAIN) "
+                + "before any clone/fetch/pull/push."
+            )
+        return git_user, git_token, git_domain
+
+    def _authenticated_url(self, url):
+        """Injects the configured credentials into an http(s) remote URL.
+
+        Works for both http:// and https:// remotes. Any credentials already
+        embedded in the URL are stripped first, and the token is URL-encoded so
+        special characters don't corrupt the URL.
+        """
+        git_user, git_token, git_domain = self._require_credentials()
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https"):
+            raise RuntimeError(
+                f"Unsupported remote scheme in '{url}'. Only http/https remotes "
+                "can be authenticated with GIT_USERNAME/GIT_TOKEN."
+            )
+        # Strip any user:pass@ that may already be embedded in the host part.
+        host = parts.netloc.rsplit("@", 1)[-1]
+        if git_domain and git_domain not in host:
+            logger.warning(
+                f"Remote host '{host}' does not match GIT_DOMAIN '{git_domain}'; "
+                "injecting credentials anyway."
+            )
+        netloc = f"{quote(git_user, safe='')}:{quote(git_token, safe='')}@{host}"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+    def _remote_url(self, repo_path):
+        """Reads the (clean) origin URL stored in the repo's git config."""
+        res = subprocess.run(
+            ["git", "-C", repo_path, "config", "--get", "remote.origin.url"],
+            capture_output=True, text=True,
+        )
+        return res.stdout.strip()
+
+    def _authenticated_remote_url(self, repo_path):
+        """Builds an authenticated origin URL for an already-cloned repo."""
+        remote_url = self._remote_url(repo_path)
+        if not remote_url:
+            raise RuntimeError(f"Could not determine origin URL for repo at {repo_path}")
+        return self._authenticated_url(remote_url)
+
+    def _redact(self, text):
+        """Strips any embedded `user:token@` secrets from text before it is
+        surfaced to logs or the UI, so credentials never leak."""
+        if not text:
+            return text
+        token = os.environ.get("GIT_TOKEN")
+        if token:
+            text = text.replace(token, "***")
+        # Also mask any user:pass@ that made it into a URL in the message.
+        return re.sub(r"://[^/@\s]+:[^/@\s]+@", "://***:***@", text)
+
+    def _run_git(self, args, action):
+        """Runs a git command, capturing output. On failure raises a clean,
+        credential-redacted RuntimeError containing git's actual stderr so the
+        real cause (e.g. auth denied) is visible instead of a bare exit code."""
+        result = subprocess.run(args, capture_output=True, text=True)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"{action} failed: {self._redact(detail)}")
+        return result
+
     def clone_or_update(self, repo_url):
         repo_path = self._get_repo_path(repo_url)
+        auth_url = self._authenticated_url(repo_url)
         if os.path.exists(repo_path):
-            # Update existing
+            # Update existing — fetch via authenticated URL, keep stored remote clean.
             logger.info(f"Updating existing repo: {repo_url} at {repo_path}")
-            subprocess.run(["git", "-C", repo_path, "fetch", "--all"], check=True)
+            self._run_git(
+                ["git", "-C", repo_path, "fetch", auth_url,
+                 "+refs/heads/*:refs/remotes/origin/*", "--prune", "--tags"],
+                action="Fetch",
+            )
         else:
-            # Clone new
+            # Clone new via authenticated URL, then scrub the token from config.
             logger.info(f"Cloning new repo: {repo_url} to {repo_path}")
-            subprocess.run(["git", "clone", repo_url, repo_path], check=True)
+            self._run_git(["git", "clone", auth_url, repo_path], action="Clone")
+            subprocess.run(
+                ["git", "-C", repo_path, "remote", "set-url", "origin", repo_url],
+                check=True,
+            )
         return repo_path
 
     def list_branches(self, repo_path):
@@ -56,9 +153,11 @@ class GitManager:
                 # If still fails, it might just be the current branch
                 pass
         
-        # Try to pull latest, but don't fail if it's not possible (e.g. no upstream)
+        # Try to pull latest via authenticated URL, but don't fail if it's not
+        # possible (e.g. no upstream). Credentials are required to reach the remote.
         logger.debug(f"Pulling latest for {branch}")
-        subprocess.run(["git", "-C", repo_path, "pull", "origin", branch], capture_output=True)
+        auth_url = self._authenticated_remote_url(repo_path)
+        subprocess.run(["git", "-C", repo_path, "pull", auth_url, branch], capture_output=True)
 
     def get_default_branch(self, repo_path):
         result = subprocess.run(
@@ -127,36 +226,27 @@ class GitManager:
             subprocess.run(["git", "-C", repo_path, "checkout", "-"], check=True, capture_output=True)
             return "No changes to commit"
 
-        # 4. Handle Credentials and Push
-        git_user = os.environ.get("GIT_USERNAME")
-        git_token = os.environ.get("GIT_TOKEN")
-        git_domain = os.environ.get("GIT_DOMAIN", "gitlab.dominosindia.in")
-        
-        if git_user and git_token:
-            # We must get the repository slug out of the remote
-            rem_res = subprocess.run(["git", "-C", repo_path, "config", "--get", "remote.origin.url"], capture_output=True, text=True)
-            remote_url = rem_res.stdout.strip()
-            
-            # Simple assumption it is https
-            if remote_url.startswith("https://"):
-                authenticated_url = remote_url.replace(f"https://{git_domain}", f"https://{git_user}:{git_token}@{git_domain}")
-                subprocess.run(["git", "-C", repo_path, "remote", "set-url", "origin", authenticated_url], check=True)
-                logger.info("Injected Git credentials into remote origin.")
-        
+        # 4. Build an authenticated push URL (works for http:// and https://).
+        # Credentials are required — this raises if they are not configured.
+        # We push to the URL directly so the token is never persisted to config.
+        auth_url = self._authenticated_remote_url(repo_path)
+        logger.info("Using configured Git credentials for push.")
+
         # 5. Push with GitLab MR options
         logger.info(f"Pushing branch {branch_name} and opening Merge Request...")
         push_cmd = [
             "git", "-C", repo_path, "push",
             "-o", "merge_request.create",
             "-o", "merge_request.target=master",
-            "origin", branch_name
+            auth_url, branch_name
         ]
         
         push_res = subprocess.run(push_cmd, capture_output=True, text=True)
         
         if push_res.returncode != 0:
-            logger.error(f"Push failed: {push_res.stderr}")
-            raise Exception(f"Git push failed: {push_res.stderr}")
+            detail = self._redact(push_res.stderr)
+            logger.error(f"Push failed: {detail}")
+            raise Exception(f"Git push failed: {detail}")
             
         # 6. Restore the uncommitted state on master so the UI dashboard stays green
         logger.info("Restoring modified state locally to master to sync UI...")

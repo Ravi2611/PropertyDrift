@@ -9,6 +9,7 @@ from src.core.git_manager import GitManager
 from src.core.remediator import ConfigRemediator
 from src.core.logger import setup_logger
 import os
+import shutil
 from typing import List, Dict, Optional, Any
 import json
 
@@ -159,6 +160,66 @@ def clone_repo(repo_url: str):
     except Exception as e:
         logger.error(f"Error: POST /repo/clone | url={repo_url} | error={str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get(
+    "/repos",
+    tags=["Repository"],
+    summary="List Cloned Repositories",
+    description="Returns the names of all repositories currently cloned under `data/repos/`."
+)
+def list_cloned_repos():
+    logger.info("Request: GET /repos")
+    base_dir = "data/repos"
+    if not os.path.isdir(base_dir):
+        return {"repos": []}
+    repos = sorted(
+        name for name in os.listdir(base_dir)
+        if os.path.isdir(os.path.join(base_dir, name))
+    )
+    return {"repos": repos}
+
+
+@app.delete(
+    "/repo/{repo_name}",
+    tags=["Repository"],
+    summary="Delete a Cloned Repository",
+    description="""
+Permanently deletes a cloned repository folder from the local `data/repos/` directory.
+
+This only removes the local working copy — it never touches the remote (GitLab).
+Deleting a repo frees disk space and forces a fresh `git clone` the next time it is
+cloned. The special `mock_repo` fixture cannot be deleted.
+    """
+)
+def delete_cloned_repo(repo_name: str):
+    logger.info(f"Request: DELETE /repo/{repo_name}")
+
+    # Guard: the mock fixture lives outside data/repos and must never be removed.
+    if repo_name == "mock_repo":
+        raise HTTPException(status_code=400, detail="The mock_repo fixture cannot be deleted")
+
+    # Guard: reject anything that could escape the data/repos directory.
+    if not repo_name or "/" in repo_name or "\\" in repo_name or repo_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid repository name")
+
+    base_dir = os.path.abspath("data/repos")
+    repo_path = os.path.abspath(os.path.join(base_dir, repo_name))
+
+    # Guard: ensure the resolved path stays strictly inside data/repos.
+    if os.path.dirname(repo_path) != base_dir:
+        raise HTTPException(status_code=400, detail="Invalid repository path")
+
+    if not os.path.isdir(repo_path):
+        raise HTTPException(status_code=404, detail=f"Repository '{repo_name}' not found")
+
+    try:
+        shutil.rmtree(repo_path)
+        logger.info(f"Deleted cloned repo: {repo_path}")
+        return {"status": "success", "message": f"Deleted '{repo_name}'", "repo_name": repo_name}
+    except Exception as e:
+        logger.error(f"Error deleting repo '{repo_name}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete repository: {e}")
 
 
 @app.get(

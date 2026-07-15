@@ -155,9 +155,9 @@ mkdir -p config
 touch config/rules.yaml
 ```
 
-### 5. Create a `.env` file
+### 5. Create a `.env` file (required)
 
-DriftGuard uses `python-dotenv` — create a `.env` file in the project root and it will be loaded automatically on startup. This is the recommended way to configure the app locally.
+DriftGuard uses `python-dotenv` — create a `.env` file in the project root and it will be loaded automatically on startup. **This step is mandatory:** all Git operations (clone, fetch, pull, push) authenticate with these credentials, and DriftGuard will refuse to talk to a remote without them.
 
 ```env
 GIT_USERNAME=your-gitlab-username
@@ -166,6 +166,8 @@ GIT_DOMAIN=gitlab.your-domain.com
 ```
 
 > ⚠️ **Never commit `.env` to Git.** Make sure it is in your `.gitignore`.
+>
+> ℹ️ If these are missing, cloning/scanning fails immediately with a `Missing required Git credentials` error — this is intentional (no fallback to ambient Git auth).
 
 A `.env.example` template is provided in the repo — copy it to get started:
 
@@ -321,11 +323,11 @@ No code changes needed — DriftGuard picks it up automatically.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GIT_USERNAME` | For MR creation | — | GitLab username |
-| `GIT_TOKEN` | For MR creation | — | GitLab Personal Access Token with `api` and `write_repository` scope |
-| `GIT_DOMAIN` | No | `gitlab.dominosindia.in` | Your GitLab instance domain |
+| `GIT_USERNAME` | **Yes** | — | GitLab username |
+| `GIT_TOKEN` | **Yes** | — | GitLab Personal Access Token with `api` and `write_repository` scope |
+| `GIT_DOMAIN` | **Yes** | `gitlab.dominosindia.in` | Your GitLab instance domain |
 
-> **Note:** If `GIT_USERNAME` and `GIT_TOKEN` are not set, DriftGuard will still work for read operations (clone, scan, browse). Only MR creation will fail.
+> **Note:** All three variables are **required for every Git operation** — clone, fetch, pull, and push all authenticate with these credentials. DriftGuard will **not** fall back to your machine's ambient/cached Git credentials. If any of them are missing, cloning and scanning will fail immediately with a clear `Missing required Git credentials` error. Credentials are injected into the remote URL only for the duration of each command and are **never persisted** to the cloned repo's `.git/config`. Both `http://` and `https://` remotes are supported.
 
 ### Creating a GitLab Personal Access Token
 

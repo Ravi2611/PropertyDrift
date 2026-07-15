@@ -243,7 +243,19 @@
                     <button id="modeBtnDual" onclick="setMode('dual')">Two Repos</button>
                 </div>
             </div>
-            <button onclick="location.href='/history.html'" style="background: #334155; color: white;">View History</button>
+            <div style="display: flex; gap: 0.5rem;">
+                <button onclick="toggleRepoManager()" style="background: #334155; color: white;">Manage Repos</button>
+                <button onclick="location.href='/history.html'" style="background: #334155; color: white;">View History</button>
+            </div>
+        </div>
+
+        <!-- CLONED REPO MANAGER -->
+        <div id="repoManager" style="display: none; background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 1rem 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                <label style="color: var(--text-dim); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;">Cloned Repositories</label>
+                <a href="#" onclick="loadClonedRepos(); return false;" style="color: var(--primary); font-size: 0.72rem; text-decoration: none;">Refresh</a>
+            </div>
+            <div id="repoManagerList" style="display: flex; flex-direction: column; gap: 0.4rem;"></div>
         </div>
 
         <!-- SINGLE-REPO PANEL -->
@@ -421,6 +433,52 @@
         const dualRepos = { A: '', B: '' };          // dual-mode repo names (per side)
         const dualServiceLists = { A: [], B: [] };   // available service folders per side
 
+        // ---------- Cloned repo manager ----------
+        function toggleRepoManager() {
+            const el = document.getElementById('repoManager');
+            const showing = el.style.display !== 'none';
+            el.style.display = showing ? 'none' : 'block';
+            if (!showing) loadClonedRepos();
+        }
+
+        async function loadClonedRepos() {
+            const list = document.getElementById('repoManagerList');
+            list.innerHTML = '<span style="color: var(--text-dim); font-size: 0.8rem;">Loading…</span>';
+            try {
+                const res = await fetch('/repos');
+                const data = await res.json();
+                const repos = data.repos || [];
+                if (repos.length === 0) {
+                    list.innerHTML = '<span style="color: var(--text-dim); font-size: 0.8rem;">No cloned repositories.</span>';
+                    return;
+                }
+                list.innerHTML = repos.map(name => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem 0.75rem;">
+                        <span style="font-size: 0.85rem; color: white; font-family: monospace;">${name}</span>
+                        <button onclick="deleteClonedRepo('${name}')" title="Delete this cloned repo from disk"
+                            style="background: #ef4444; color: white; font-size: 0.72rem; padding: 0.35rem 0.7rem;">Delete</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = '<span style="color: var(--danger, #ef4444); font-size: 0.8rem;">Failed to load repos: ' + e + '</span>';
+            }
+        }
+
+        async function deleteClonedRepo(name) {
+            if (!confirm(`Delete the cloned repository "${name}" from disk?\n\nThis removes only the local copy under data/repos/ — the remote (GitLab) is untouched. It will be re-cloned fresh next time.`)) return;
+            try {
+                const res = await fetch('/repo/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok && data.status === 'success') {
+                    loadClonedRepos();
+                } else {
+                    alert('Delete failed: ' + (data.detail || 'unknown error'));
+                }
+            } catch (e) {
+                alert('Delete failed: ' + e);
+            }
+        }
+
         // ---------- Mode toggle ----------
         function setMode(newMode) {
             mode = newMode;
@@ -455,6 +513,7 @@
                 populateServiceChecklist(data.services);
 
                 loadEnvs();
+                if (document.getElementById('repoManager').style.display !== 'none') loadClonedRepos();
             } else {
                 alert('Clone failed: ' + data.detail);
             }
@@ -590,6 +649,7 @@
             }
 
             await onPairChanged();
+            if (document.getElementById('repoManager').style.display !== 'none') loadClonedRepos();
         }
 
         // ---- Dual-mode service pair builder ----

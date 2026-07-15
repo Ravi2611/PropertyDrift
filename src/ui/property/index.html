@@ -228,10 +228,57 @@
             margin-top: 0.25rem;
         }
         .repo-status.ok { color: var(--success); }
+
+        .tool-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #1e293b;
+        }
+        .tool-nav .brand {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 0.02em;
+        }
+        .tool-nav .brand .dot {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            margin-right: 0.45rem;
+            vertical-align: middle;
+        }
+        .tool-nav .links { display: flex; gap: 0.5rem; }
+        .tool-nav .links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.35rem 0.7rem;
+            border-radius: 6px;
+        }
+        .tool-nav .links a:hover { color: white; background: #1e293b; }
+        .tool-nav .links a.active { color: white; background: #1e293b; }
     </style>
 </head>
 
 <body>
+    <nav class="tool-nav">
+        <a href="/" style="text-decoration: none; color: inherit;">
+            <span class="brand"><span class="dot"></span>DriftGuard</span>
+        </a>
+        <div class="links">
+            <a href="/">Home</a>
+            <a href="/property/" class="active">Property Drift</a>
+            <a href="/db/">DB Drift</a>
+        </div>
+    </nav>
+
     <h1>DriftGuard Configuration Health</h1>
 
     <div class="controls card" style="display: flex; flex-direction: column; gap: 1.25rem;">
@@ -245,7 +292,7 @@
             </div>
             <div style="display: flex; gap: 0.5rem;">
                 <button onclick="toggleRepoManager()" style="background: #334155; color: white;">Manage Repos</button>
-                <button onclick="location.href='/history.html'" style="background: #334155; color: white;">View History</button>
+                <button onclick="location.href='/property/history.html'" style="background: #334155; color: white;">View History</button>
             </div>
         </div>
 
@@ -427,6 +474,25 @@
     </table>
 
     <script>
+        // ---------- API base path ----------
+        // Property Drift is mounted at /property on the unified server, but the
+        // backend routes are still declared as /scan, /repo/... etc. This shim
+        // prefixes any root-absolute fetch() call so existing code keeps working.
+        (function () {
+            const BASE = '/property';
+            const origFetch = window.fetch.bind(window);
+            window.fetch = function (input, init) {
+                if (typeof input === 'string'
+                        && input.startsWith('/')
+                        && !input.startsWith('//')
+                        && !input.startsWith(BASE + '/')
+                        && input !== BASE) {
+                    input = BASE + input;
+                }
+                return origFetch(input, init);
+            };
+        })();
+
         // ---------- State ----------
         let mode = 'single';            // 'single' | 'dual'
         let currentRepo = '';           // single-mode repo

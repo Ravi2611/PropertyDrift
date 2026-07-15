@@ -1,9 +1,20 @@
+# Shared / infrastructure
 fastapi
 uvicorn
 pyyaml
-sqlmodel
 pytest
 pydantic-settings
 python-multipart
-ruamel.yaml
 python-dotenv
+
+# Property Drift
+sqlmodel
+ruamel.yaml
+
+# DB Drift
+sqlalchemy
+pymysql
+pymongo
+jinja2
+pandas
+cryptography

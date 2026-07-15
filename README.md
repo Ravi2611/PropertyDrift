@@ -1,8 +1,25 @@
 # DriftGuard 🛡️
 
-> **Automated Configuration Drift Detection & Remediation for GitLab-hosted config repositories.**
+> **One console for configuration drift *and* database schema drift.**
 
-DriftGuard scans your Git-hosted configuration repositories, detects when environments have drifted apart (missing keys, value mismatches, type mismatches), and can automatically fix them — with optional GitLab Merge Request creation.
+DriftGuard bundles two drift detectors behind a single UI on port `8051`:
+
+| Tool | Purpose | Path |
+|------|---------|------|
+| **Property Drift** | Detect and auto-fix drift in YAML / `.properties` files across Git-hosted environments (optionally opens a GitLab MR). | `/property/` |
+| **DB Drift**       | Compare live MySQL & MongoDB schemas (tables, columns, indexes, constraints, collections) across environments; export CSV. | `/db/` |
+
+Both tools share the same FastAPI process. Start the server and open [`http://localhost:8051/`](http://localhost:8051/) — the landing page lets you pick a tool.
+
+```
+localhost:8051/               → launcher (pick Property or DB)
+localhost:8051/property/      → Property Drift dashboard
+localhost:8051/property/docs  → Property Drift Swagger
+localhost:8051/db/            → DB Drift dashboard
+localhost:8051/db/docs        → DB Drift Swagger
+```
+
+The rest of this README is the deep dive on **Property Drift**. See [`src/db_drift/`](src/db_drift/) and the DB Drift section below for the schema-drift side.
 
 ---
 
@@ -12,7 +29,7 @@ DriftGuard scans your Git-hosted configuration repositories, detects when enviro
 - [How DriftGuard Works](#how-driftguard-works)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
-- [Local Setup](#local-setup)
+- [Fresh Mac Setup — from zero to running in ~5 minutes](#fresh-mac-setup--from-zero-to-running-in-5-minutes)
 - [Configuration — rules.yaml](#configuration--rulesyaml)
 - [Environment Variables](#environment-variables)
 - [Running the Application](#running-the-application)
@@ -79,31 +96,48 @@ DriftGuard detects that `server.timeout` and `feature.payments` are **missing** 
 
 ```
 driftguard/
-├── server.py                # ⚡ Entrypoint — starts uvicorn, loads .env, serves UI
+├── server.py                # ⚡ Unified entrypoint — mounts / (launcher), /property, /db
 ├── src/
-│   ├── api/
-│   │   ├── main.py          # FastAPI app — all endpoints
-│   │   └── models.py        # SQLModel database models (DriftRecord, ScanHistory)
-│   ├── core/
-│   │   ├── engine.py        # Drift comparison logic — compares env files
+│   ├── api/                 # Property Drift API
+│   │   ├── main.py          # FastAPI sub-app (mounted at /property)
+│   │   └── models.py        # SQLModel tables (DriftRecord, ScanHistory)
+│   ├── core/                # Property Drift engine
+│   │   ├── engine.py        # Compares env files, produces DriftDiffs
 │   │   ├── scanner.py       # Repo scanner — discovers services and environments
-│   │   ├── parser.py        # YAML and .properties file parsers (flattens to dot-notation)
+│   │   ├── parser.py        # YAML / .properties parsers (dot-notation)
 │   │   ├── remediator.py    # Writes missing keys back into config files
-│   │   ├── rules.py         # Rules engine — ignore keys, severity, value transforms
-│   │   ├── git_manager.py   # Git operations — clone, checkout, push, MR creation
+│   │   ├── rules.py         # Ignore lists, severity, value transforms
+│   │   ├── git_manager.py   # Clone / checkout / push / MR creation
 │   │   └── logger.py        # Shared logger (console + file)
-│   └── ui/                  # Frontend — static files served at /
-│       └── index.html       # (and other static assets)
+│   ├── ui/
+│   │   ├── home.html        # Launcher (served at /)
+│   │   └── property/        # Property Drift dashboard + history
+│   │       ├── index.html
+│   │       └── history.html
+│   └── db_drift/            # DB Drift sub-app (mounted at /db)
+│       ├── app.py           # FastAPI sub-app + Jinja template
+│       ├── api/routes.py    # /api/health, /api/environments, /api/scan, /api/export
+│       ├── core/            # DriftEngine, ReportBuilder, IgnoreMatcher, CSV export
+│       ├── comparators/     # mysql/ + mongo/ introspection
+│       ├── config/          # environments.yaml, ignore_rules.yaml
+│       ├── utils/logger.py
+│       └── ui/templates/index.html
 ├── config/
-│   └── rules.yaml           # ⚠️ Required — drift rules, ignore lists, env mappings
-├── .env                     # Local environment variables (never commit this)
-├── .env.example             # Template for required environment variables
+│   └── rules.yaml           # ⚠️ Required for Property Drift
+├── .env                     # GIT_* + MYSQL_* + MONGO_* (never commit)
 ├── data/
-│   └── repos/               # Cloned repositories are stored here (auto-created)
-├── logs/
-│   └── driftguard.log       # Application logs (auto-created)
+│   ├── repos/               # Property Drift: cloned repos (auto-created)
+│   └── driftguard.db        # Property Drift: SQLite scan history
+├── logs/                    # Application logs
 └── README.md
 ```
+
+### DB Drift quick tour
+
+- Configure environments in [`src/db_drift/config/environments.yaml`](src/db_drift/config/environments.yaml) (per-env MySQL and MongoDB endpoints).
+- Suppress noisy tables/collections in [`src/db_drift/config/ignore_rules.yaml`](src/db_drift/config/ignore_rules.yaml).
+- Credentials in `environments.yaml` win; if omitted, DB Drift falls back to `MYSQL_USER` / `MYSQL_PASSWORD` / `MONGO_USER` / `MONGO_PASSWORD` from `.env`.
+- Use the **Test with Mock Data** button on `/db/` to try the UI without any real DB connection.
 
 ---
 
@@ -111,93 +145,148 @@ driftguard/
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Python | 3.10+ | |
-| pip | Latest | |
-| git | Any recent | Must be available in `PATH` |
-| GitLab access | — | PAT token needed for MR creation |
+| macOS | 12+ | Apple Silicon or Intel |
+| Python | 3.10+ | Installed via Homebrew below |
+| git | Any recent | Installed via Xcode CLT or Homebrew |
+| GitLab access | — | PAT token needed only for Property Drift MR creation |
 
 ---
 
-## Local Setup
+## Fresh Mac Setup — from zero to running in ~5 minutes
 
-### 1. Clone the DriftGuard repository
+Copy-paste each block, in order, into **Terminal**. This assumes a clean Mac with nothing installed.
 
-```bash
-git clone https://gitlab.your-domain.com/your-team/driftguard.git
-cd driftguard
-```
-
-### 2. Create and activate a virtual environment
+### 1. Install Xcode Command Line Tools (gives you `git`, `clang`, etc.)
 
 ```bash
-python -m venv venv
-
-# Linux / macOS
-source venv/bin/activate
-
-# Windows
-venv\Scripts\activate
+xcode-select --install
 ```
 
-### 3. Install dependencies
+A GUI popup will appear — click **Install** and wait for it to finish (2–5 min). If it's already installed you'll see `command line tools are already installed` — that's fine.
+
+### 2. Install Homebrew (skip if `brew --version` already works)
 
 ```bash
-pip install -r requirements.txt
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-### 4. Set up `config/rules.yaml`
-
-This file is **required** for the app to function. See the [Configuration](#configuration--rulesyaml) section below for the full format.
+After it finishes, add brew to your shell PATH (only needed on Apple Silicon):
 
 ```bash
-# At minimum, create an empty valid rules file
-mkdir -p config
-touch config/rules.yaml
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
-### 5. Create a `.env` file (required)
+### 3. Install Python 3.10+
 
-DriftGuard uses `python-dotenv` — create a `.env` file in the project root and it will be loaded automatically on startup. **This step is mandatory:** all Git operations (clone, fetch, pull, push) authenticate with these credentials, and DriftGuard will refuse to talk to a remote without them.
+```bash
+brew install python@3.11
+python3 --version   # should print Python 3.11.x
+```
 
-```env
+### 4. Get the project
+
+If you already have the folder, just `cd` into it. Otherwise clone it:
+
+```bash
+cd ~/Desktop
+git clone https://gitlab.your-domain.com/your-team/driftguard.git PropertyDrift
+cd PropertyDrift
+```
+
+### 5. Create the virtualenv and install all dependencies
+
+```bash
+python3 -m venv venv
+venv/bin/pip install --upgrade pip
+venv/bin/pip install -r requirements.txt
+```
+
+This pulls in FastAPI, uvicorn, SQLModel, ruamel.yaml (Property Drift) **and** SQLAlchemy, PyMySQL, PyMongo, Jinja2, pandas, cryptography (DB Drift).
+
+### 6. Create your `.env` file
+
+```bash
+cat > .env <<'EOF'
+# --- Property Drift: GitLab auth (required for clone / MR creation) ---
 GIT_USERNAME=your-gitlab-username
 GIT_TOKEN=your-personal-access-token
 GIT_DOMAIN=gitlab.your-domain.com
+
+# --- DB Drift: fallback credentials when environments.yaml omits them ---
+MYSQL_USER=readonly_user
+MYSQL_PASSWORD=readonly_password
+MONGO_USER=readonly_user
+MONGO_PASSWORD=readonly_password
+EOF
 ```
 
-> ⚠️ **Never commit `.env` to Git.** Make sure it is in your `.gitignore`.
->
-> ℹ️ If these are missing, cloning/scanning fails immediately with a `Missing required Git credentials` error — this is intentional (no fallback to ambient Git auth).
+Then open `.env` in any editor and replace the placeholders with real values.
 
-A `.env.example` template is provided in the repo — copy it to get started:
+> `.env` is git-ignored — never commit it.
+
+### 7. Make sure the Property Drift rules file exists
 
 ```bash
-cp .env.example .env
-# Then edit .env with your actual values
+mkdir -p config
+[ -f config/rules.yaml ] || touch config/rules.yaml
 ```
 
-### 6. Run the application
+An empty file is a valid starting point. See [Configuration — rules.yaml](#configuration--rulesyaml) for the full format.
+
+### 8. (Optional) Point DB Drift at your environments
+
+Edit [`src/db_drift/config/environments.yaml`](src/db_drift/config/environments.yaml) to list the MySQL and MongoDB hosts you want to compare. You can skip this for the demo — the **Test with Mock Data** button on `/db/` works without any DB connection.
+
+### 9. Start the unified server
 
 ```bash
 venv/bin/python server.py
 ```
 
-This single command:
-- Loads your `.env` file automatically
-- Starts the FastAPI backend on port `8051/driftguard`
-- Serves the frontend UI from `src/ui/` at `http://localhost:8051/`
+You should see:
+
+```
+INFO:     Uvicorn running on http://0.0.0.0:8051 (Press CTRL+C to quit)
+```
+
+### 10. Open it in your browser
+
+| URL | What you get |
+|-----|--------------|
+| [http://localhost:8051/](http://localhost:8051/) | Launcher — pick a tool |
+| [http://localhost:8051/property/](http://localhost:8051/property/) | Property Drift dashboard |
+| [http://localhost:8051/db/](http://localhost:8051/db/) | DB Drift dashboard |
+| [http://localhost:8051/property/docs](http://localhost:8051/property/docs) | Property Drift Swagger |
+| [http://localhost:8051/db/docs](http://localhost:8051/db/docs) | DB Drift Swagger |
+
+That's it — one process, one port, both tools.
 
 ---
 
-### Stopping the Application
+### Stopping / restarting
 
-If the port is already in use (e.g. a previous instance is still running), kill it first:
+Stop the server with `Ctrl + C` in the terminal running it.
+
+If port `8051` is stuck (a prior run didn't exit cleanly):
 
 ```bash
 lsof -i :8051 -t | xargs kill -9 && venv/bin/python server.py
 ```
 
-This kills any process on port 8051/driftguard and immediately restarts the app.
+### Presentation-day cheat sheet (one paste)
+
+Once the machine has Xcode CLT, Homebrew, and Python 3.11 (steps 1–3 done), the entire day-of setup is:
+
+```bash
+cd ~/Desktop/PropertyDrift
+python3 -m venv venv
+venv/bin/pip install --upgrade pip
+venv/bin/pip install -r requirements.txt
+# ensure .env and config/rules.yaml exist (see steps 6 & 7)
+venv/bin/python server.py
+# → open http://localhost:8051/
+```
 
 ---
 
@@ -356,9 +445,9 @@ uvicorn src.api.main:app --host 0.0.0.0 --port 8051 --workers 2
 | URL | What it is |
 |-----|-----------|
 | `http://localhost:8051` | **DriftGuard UI** — the frontend dashboard |
-| `http://localhost:8051/driftguard/docs` | **Swagger UI** — interactive API documentation |
-| `http://localhost:8051/driftguard/redoc` | **ReDoc** — read-only API documentation |
-| `http://localhost:8051/driftguard/health` | Health check |
+| `http://localhost:8051/property/docs` | **Swagger UI** — interactive API documentation |
+| `http://localhost:8051/property/redoc` | **ReDoc** — read-only API documentation |
+| `http://localhost:8051/property/health` | Health check |
 
 
 
@@ -384,7 +473,7 @@ Clones a remote Git config repository locally. If already cloned, fetches latest
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8051/driftguard/repo/clone?repo_url=https://gitlab.your-domain.com/team/stage-cloud-config.git"
+curl -X POST "http://localhost:8051/property/repo/clone?repo_url=https://gitlab.your-domain.com/team/stage-cloud-config.git"
 ```
 
 **Response:**
@@ -410,7 +499,7 @@ Lists all service directories inside a cloned repository.
 
 **Example:**
 ```bash
-curl "http://localhost:8051/driftguard/repo/stage-cloud-config/services?branch=master"
+curl "http://localhost:8051/property/repo/stage-cloud-config/services?branch=master"
 ```
 
 ---
@@ -427,7 +516,7 @@ Browses environment folders under a service. Supports hierarchical navigation.
 
 **Example:**
 ```bash
-curl "http://localhost:8051/driftguard/repo/stage-cloud-config/envs?service=post-order&branch=master"
+curl "http://localhost:8051/property/repo/stage-cloud-config/envs?service=post-order&branch=master"
 ```
 
 **Response:**
@@ -466,12 +555,12 @@ Runs a drift scan comparing a baseline environment to a target environment insid
 
 **Example (single service):**
 ```bash
-curl "http://localhost:8051/driftguard/scan?repo_name=stage-cloud-config&service=post-order&baseline_env=s0&target_env=s1"
+curl "http://localhost:8051/property/scan?repo_name=stage-cloud-config&service=post-order&baseline_env=s0&target_env=s1"
 ```
 
 **Example (multiple services in one scan):**
 ```bash
-curl "http://localhost:8051/driftguard/scan?repo_name=stage-cloud-config&services=post-order,payment,inventory&baseline_env=s0&target_env=s1"
+curl "http://localhost:8051/property/scan?repo_name=stage-cloud-config&services=post-order,payment,inventory&baseline_env=s0&target_env=s1"
 ```
 
 All selected services land under one `scan_id`; each drift record is attributed to its own service, and Fix All fixes across every service in one MR.
@@ -498,7 +587,7 @@ Use this when the baseline and target live in separate repos (e.g. a shared conf
 
 **Multi-pair example:**
 ```bash
-curl "http://localhost:8051/driftguard/scan/dual?\
+curl "http://localhost:8051/property/scan/dual?\
 baseline_repo=repo-a&target_repo=repo-b&\
 baseline_services=post-order,payment&target_services=post-order-web,payment-web&\
 baseline_env=s0&target_env=prod"
@@ -508,7 +597,7 @@ Each pair is compared independently and all results land under one `scan_id`. Ev
 
 **Example:**
 ```bash
-curl "http://localhost:8051/driftguard/scan/dual?\
+curl "http://localhost:8051/property/scan/dual?\
 baseline_repo=stage-cloud-config&target_repo=prod-cloud-config&\
 baseline_service=post-order&target_service=post-order-web&\
 baseline_env=s0&target_env=prod&\
@@ -599,7 +688,7 @@ Fixes a single `MISSING_KEY` drift by inserting the key into the target config f
 **Example:**
 ```bash
 # Fix locally only
-curl -X POST "http://localhost:8051/driftguard/remediate?record_id=101"
+curl -X POST "http://localhost:8051/property/remediate?record_id=101"
 
 # Fix and open MR
 curl -X POST "http://localhost:8051/remediate?record_id=101&create_mr=true"
@@ -617,7 +706,7 @@ Fixes **all** `MISSING_KEY` drifts in a scan in one shot.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8051/driftguard/driftguard/remediate/bulk?scan_id=42&create_mr=true"
+curl -X POST "http://localhost:8051/property/remediate/bulk?scan_id=42&create_mr=true"
 ```
 
 **Response:**
@@ -780,14 +869,18 @@ Repo            : driftguard
 Language        : Python 3.10+
 Entrypoint      : venv/bin/python server.py
 Health Check    : GET /health → 200 OK
-Port            : 8051/driftguard
+Port            : 8051  (launcher on /, Property on /property, DB on /db)
 Internal/External: Internal only
 Resource Strategy: Low (minimal replicas, no autoscaling needed)
 
 Environment Variables (Secrets):
-  GIT_USERNAME  = <gitlab-username>
-  GIT_TOKEN     = <gitlab-pat-token>
-  GIT_DOMAIN    = <your-gitlab-domain>
+  GIT_USERNAME    = <gitlab-username>       # Property Drift
+  GIT_TOKEN       = <gitlab-pat-token>      # Property Drift
+  GIT_DOMAIN      = <your-gitlab-domain>    # Property Drift
+  MYSQL_USER      = <readonly-mysql-user>   # DB Drift (fallback)
+  MYSQL_PASSWORD  = <readonly-mysql-pass>   # DB Drift (fallback)
+  MONGO_USER      = <readonly-mongo-user>   # DB Drift (fallback)
+  MONGO_PASSWORD  = <readonly-mongo-pass>   # DB Drift (fallback)
 ```
 
 ---

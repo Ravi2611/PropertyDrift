@@ -66,7 +66,6 @@ def _split_csv(value: Optional[str]) -> List[str]:
 
 app = FastAPI(
     title="DriftGuard API",
-    root_path="/driftguard",
     description="""
 ## DriftGuard — Configuration Drift Detection & Remediation
 

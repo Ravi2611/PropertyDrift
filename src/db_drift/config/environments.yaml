@@ -1,0 +1,30 @@
+environments:
+  Stage_S1:
+    mysql:
+      - name: wistores_db
+        database: wistores_dominos
+        host: stage-mysql.dominosindia.in
+        port: 3306
+        user: wistores_user
+        password: PuF2KbGm
+    mongo:
+      - name: Aggregators
+        replica_sets: "172.23.8.88:27017" 
+        database: "aggregators_s1"
+        user: "stagaggregatRrw"
+        password: "aggregatRdwhrwtftq389"
+
+  Stage_S3:
+    mysql:
+      - name: wistores_db
+        database: wistores_dominos
+        host: s3-mysql.dominosindia.in
+        port: 3306
+        user: wistores_user
+        password: PuF2KbGm
+    mongo:
+      - name: Aggregators
+        replica_sets: "172.23.8.88:27017" 
+        database: "aggregators_s1"
+        user: "stagaggregatRrw"
+        password: "aggregatRdwhrwtftq389"

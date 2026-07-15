@@ -1,0 +1,12 @@
+mysql:
+  tables:
+    - audit_*
+    - temp_*
+  columns:
+    - users.last_login
+    - orders.updated_at
+
+mongo:
+  collections:
+    - cache_*
+    - temp_*

@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB Drift Guard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --accent-primary: #38bdf8;
+            --accent-secondary: #818cf8;
+            --text-main: #f1f5f9;
+            --text-dim: #94a3b8;
+            --critical: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --success: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            background: radial-gradient(circle at top right, #1e293b, #0f172a);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            margin-bottom: 3rem;
+            text-align: center;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            font-weight: 300;
+        }
+
+        .config-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        select, input {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            color: var(--text-main);
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            padding-top: 1.5rem;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+
+        .actions {
+            display: flex;
+            gap: 1rem;
+            padding-top: 1rem;
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--accent-primary);
+            color: var(--accent-primary);
+        }
+
+        .btn-outline:hover {
+            background: rgba(56, 189, 248, 0.1);
+        }
+
+        .summary-section {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .summary-card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            text-align: center;
+            border-left: 4px solid var(--info);
+        }
+
+        .summary-card.critical { border-left-color: var(--critical); }
+        .summary-card.warning { border-left-color: var(--warning); }
+        .summary-card.info { border-left-color: var(--info); }
+
+        .summary-count {
+            font-size: 2rem;
+            font-weight: 700;
+            display: block;
+        }
+
+        .results-table-container {
+            background: var(--card-bg);
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(15, 23, 42, 0.5);
+            padding: 1rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            font-weight: 600;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.9rem;
+        }
+
+        .severity-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .severity-critical { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+        .severity-warning { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+        .severity-info { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .error-section {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 0.5rem;
+            color: #fca5a5;
+            display: none;
+        }
+
+        .tool-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .tool-nav .brand {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 0.02em;
+            color: var(--text-main);
+        }
+        .tool-nav .brand .dot {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            margin-right: 0.45rem;
+            vertical-align: middle;
+        }
+        .tool-nav .links { display: flex; gap: 0.5rem; }
+        .tool-nav .links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.35rem 0.7rem;
+            border-radius: 6px;
+        }
+        .tool-nav .links a:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.06); }
+        .tool-nav .links a.active { color: var(--text-main); background: rgba(255, 255, 255, 0.08); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav class="tool-nav">
+            <a href="/" style="text-decoration: none;">
+                <span class="brand"><span class="dot"></span>DriftGuard</span>
+            </a>
+            <div class="links">
+                <a href="/">Home</a>
+                <a href="/property/">Property Drift</a>
+                <a href="/db/" class="active">DB Drift</a>
+            </div>
+        </nav>
+
+        <header>
+            <h1>DB Drift Guard</h1>
+            <p class="subtitle">Real-time schema drift detection for MySQL & MongoDB</p>
+        </header>
+
+        <div class="config-card">
+            <div class="form-group">
+                <label>Database Type</label>
+                <select id="dbType">
+                    <option value="mysql">MySQL</option>
+                    <option value="mongo">MongoDB</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Source Environment</label>
+                <select id="baselineEnv"></select>
+            </div>
+            <div class="form-group">
+                <label>Target Environment</label>
+                <select id="targetEnv"></select>
+            </div>
+            <div class="form-group">
+                <label>Database Name</label>
+                <select id="dbName">
+                    <option value="">-- All Databases --</option>
+                </select>
+            </div>
+            <div class="actions" style="grid-column: span 3;">
+                <button class="btn-primary" id="runScan">
+                    <span>⚡</span> Run Scan
+                </button>
+                <button class="btn-outline" id="runMockScan">
+                    <span>🧪</span> Test with Mock Data
+                </button>
+                <button class="btn-outline" id="downloadCsv">
+                    <span>💾</span> CSV Export
+                </button>
+            </div>
+        </div>
+
+        <div class="loader" id="loader">
+            <p>Analyzing schemas... Please wait.</p>
+        </div>
+
+        <div id="results" style="display: none;">
+            <div class="summary-section">
+                <div class="summary-card critical">
+                    <span class="summary-count" id="criticalCount">0</span>
+                    <label>Critical Drifts</label>
+                </div>
+                <div class="summary-card warning">
+                    <span class="summary-count" id="warningCount">0</span>
+                    <label>Warning Drifts</label>
+                </div>
+                <div class="summary-card info">
+                    <span class="summary-count" id="infoCount">0</span>
+                    <label>Info Drifts</label>
+                </div>
+            </div>
+
+            <div class="results-table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Severity</th>
+                            <th>Database</th>
+                            <th>Object Type</th>
+                            <th>Object Name</th>
+                            <th>Drift Type</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="error-section" id="errorSection">
+            <strong>Engine Errors:</strong>
+            <ul id="errorList"></ul>
+        </div>
+    </div>
+
+    <script>
+        // ---------- API base path ----------
+        // DB Drift is mounted at /db on the unified server. The backend routes
+        // are declared under /api/*, so browser calls need /db/api/*. This shim
+        // prefixes any root-absolute fetch() call so the existing code keeps
+        // working unchanged.
+        (function () {
+            const BASE = '/db';
+            const origFetch = window.fetch.bind(window);
+            window.fetch = function (input, init) {
+                if (typeof input === 'string'
+                        && input.startsWith('/')
+                        && !input.startsWith('//')
+                        && !input.startsWith(BASE + '/')
+                        && input !== BASE) {
+                    input = BASE + input;
+                }
+                return origFetch(input, init);
+            };
+        })();
+
+        async function fetchEnvs() {
+            const res = await fetch('/api/environments');
+            const envs = await res.json();
+            const baseline = document.getElementById('baselineEnv');
+            const target = document.getElementById('targetEnv');
+            
+            envs.forEach(env => {
+                const opt1 = new Option(env, env);
+                const opt2 = new Option(env, env);
+                baseline.add(opt1);
+                target.add(opt2);
+            });
+            
+            if (envs.length > 0) {
+                baseline.value = envs[0];
+                target.value = envs.length > 1 ? envs[1] : envs[0];
+                updateDbNames();
+            }
+        }
+
+        async function updateDbNames() {
+            const env = document.getElementById('baselineEnv').value;
+            const type = document.getElementById('dbType').value;
+            const dbSelect = document.getElementById('dbName');
+            
+            const res = await fetch(`/api/databases?env=${env}&db_type=${type}`);
+            const dbs = await res.json();
+            
+            dbSelect.innerHTML = '<option value="">-- All Databases --</option>';
+            dbs.forEach(db => {
+                const opt = new Option(db, db);
+                dbSelect.add(opt);
+            });
+        }
+
+        let lastScanWasMock = false;
+
+        async function runScan(useMock = false) {
+            lastScanWasMock = useMock;
+            const type = document.getElementById('dbType').value;
+            const baseline = document.getElementById('baselineEnv').value;
+            const target = document.getElementById('targetEnv').value;
+            const dbName = document.getElementById('dbName').value;
+
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('errorSection').style.display = 'none';
+
+            try {
+                const res = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        db_type: type,
+                        baseline_env: baseline,
+                        target_env: target,
+                        db_name: dbName || null,
+                        use_mock: useMock
+                    })
+                });
+
+                const data = await res.json();
+                displayResults(data);
+            } catch (err) {
+                alert('Scan failed: ' + err.message);
+            } finally {
+                document.getElementById('loader').style.display = 'none';
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('criticalCount').textContent = data.summary.critical;
+            document.getElementById('warningCount').textContent = data.summary.warning;
+            document.getElementById('infoCount').textContent = data.summary.info;
+
+            const body = document.getElementById('resultsBody');
+            body.innerHTML = '';
+
+            const processDrifts = (dbType) => {
+                if (!data[dbType]) return;
+                for (const [dbName, drifts] of Object.entries(data[dbType])) {
+                    drifts.forEach(d => {
+                        const row = body.insertRow();
+                        const objType = d.type.split('_').pop();
+                        row.innerHTML = `
+                            <td><span class="severity-badge severity-${d.severity.toLowerCase()}">${d.severity}</span></td>
+                            <td>${dbName}</td>
+                            <td>${objType}</td>
+                            <td>${d.object}</td>
+                            <td>${d.type}</td>
+                            <td>${d.detail}</td>
+                        `;
+                    });
+                }
+            };
+
+            processDrifts('mysql');
+            processDrifts('mongo');
+
+            if (data.errors && data.errors.length > 0) {
+                document.getElementById('errorSection').style.display = 'block';
+                const list = document.getElementById('errorList');
+                list.innerHTML = '';
+                data.errors.forEach(err => {
+                    const li = document.createElement('li');
+                    li.textContent = `[${err.component}] ${err.database}: ${err.detail}`;
+                    list.appendChild(li);
+                });
+            }
+        }
+
+        async function downloadCsv() {
+            const type = document.getElementById('dbType').value;
+            const baseline = document.getElementById('baselineEnv').value;
+            const target = document.getElementById('targetEnv').value;
+            const dbName = document.getElementById('dbName').value;
+
+            const res = await fetch('/api/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    db_type: type,
+                    baseline_env: baseline,
+                    target_env: target,
+                    db_name: dbName || null,
+                    use_mock: lastScanWasMock
+                })
+            });
+
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `drift_report_${baseline}_to_${target}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        document.getElementById('dbType').addEventListener('change', updateDbNames);
+        document.getElementById('baselineEnv').addEventListener('change', updateDbNames);
+        document.getElementById('runScan').addEventListener('click', () => runScan(false));
+        document.getElementById('runMockScan').addEventListener('click', () => runScan(true));
+        document.getElementById('downloadCsv').addEventListener('click', downloadCsv);
+
+        fetchEnvs();
+    </script>
+</body>
+</html>

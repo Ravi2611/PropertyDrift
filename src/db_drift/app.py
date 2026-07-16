@@ -24,4 +24,9 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 @app.get("/")
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    # Note: Starlette >= 0.29 changed TemplateResponse's signature to
+    # (request, name, context). Passing positional (name, context) on newer
+    # Starlette makes the dict be treated as the template name, which then
+    # crashes inside Jinja's cache with "unhashable type: 'dict'".
+    # Use keyword args so this works on both old and new Starlette.
+    return templates.TemplateResponse(request=request, name="index.html")
